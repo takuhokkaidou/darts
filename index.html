@@ -3,7 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>ダーツ自動判定＆マルチゲームシステム Ver 3.0</title>
+  <title>ダーツ自動判定＆オンライン同期 Ver 4.0</title>
+  <!-- WebRTCライブラリ (PeerJS) -->
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
   <style>
     body { 
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
@@ -17,7 +19,6 @@
     h1 { font-size: 1.2rem; margin: 5px 0; }
     .version-tag { font-size: 0.8rem; color: #00ffcc; margin-left: 5px; }
     
-    /* 設定パネル */
     .setup-panel {
       background: #1e1e1e;
       border: 1px solid #333;
@@ -28,7 +29,7 @@
     }
     .setup-group { margin-bottom: 10px; text-align: left; }
     .setup-group label { font-size: 0.85rem; color: #aaa; display: block; margin-bottom: 4px; }
-    select {
+    select, input[type="text"] {
       width: 100%;
       padding: 8px;
       background: #333;
@@ -36,6 +37,7 @@
       border: 1px solid #555;
       border-radius: 6px;
       font-size: 1rem;
+      box-sizing: border-box;
     }
 
     #board-container { position: relative; display: inline-block; margin: 5px auto; }
@@ -50,7 +52,6 @@
     }
     #status-msg { font-size: 1rem; color: #00ffcc; margin: 5px 0; font-weight: bold; min-height: 1.5rem; }
     
-    /* プレイヤー＆スコア表示 */
     .game-info {
       display: flex;
       justify-content: space-between;
@@ -82,7 +83,6 @@
     .p-name { font-size: 0.75rem; color: #888; }
     .p-score { font-size: 1.2rem; font-weight: bold; color: #fff; }
 
-    /* 3投表示 */
     .throws-container { display: flex; justify-content: center; gap: 8px; margin: 8px 0; }
     .throw-box {
       background: #222;
@@ -116,21 +116,65 @@
     button:active { background-color: #555; }
     button.action-btn { background-color: #ff9800; font-weight: bold; color: #000; }
     button.confirm-btn { background-color: #00cc88; font-weight: bold; color: #000; font-size: 1rem; padding: 10px; }
+    button.abort-btn { background-color: #442222; color: #ff6666; font-size: 0.8rem; margin-top: 8px; }
     button.multiplier { background-color: #005588; font-weight: bold;}
     button.active { background-color: #00cc88; box-shadow: 0 0 10px #00cc88; }
     button.special { background-color: #aa2222; }
     button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .stats-table {
+      width: 100%;
+      max-width: 420px;
+      margin: 10px auto;
+      border-collapse: collapse;
+      background: #181818;
+      border-radius: 8px;
+      overflow: hidden;
+      font-size: 0.85rem;
+    }
+    .stats-table th, .stats-table td {
+      border: 1px solid #333;
+      padding: 6px;
+      text-align: center;
+    }
+    .stats-table th { background: #252525; color: #00ffcc; }
+
+    .peer-id-badge {
+      background: #005588;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-family: monospace;
+      font-size: 1.1rem;
+      letter-spacing: 1px;
+      color: #00ffcc;
+      display: inline-block;
+      margin: 5px 0;
+    }
   </style>
 </head>
 <body>
 
-  <h1>🎯 ダーツ自動判定 <span class="version-tag">Ver 3.0</span></h1>
+  <h1>🎯 ダーツ自動判定 <span class="version-tag">Ver 4.0</span></h1>
 
   <video id="video" autoplay playsinline></video>
 
   <!-- 設定エリア -->
   <div class="setup-panel" id="setup-panel">
     <div class="setup-group">
+      <label>端末役割</label>
+      <select id="device-role" onchange="toggleRoleUI()">
+        <option value="single">1台でプレイ (カメラ＋表示)</option>
+        <option value="display">ディスプレイ (表示・操作専用)</option>
+        <option value="camera">カメラ (撮影・判定専用)</option>
+      </select>
+    </div>
+
+    <div id="remote-input-group" class="setup-group" style="display:none;">
+      <label>接続用 ID (ディスプレイ側に表示されるIDを入力)</label>
+      <input type="text" id="target-peer-id" placeholder="例: 1234">
+    </div>
+
+    <div class="setup-group" id="game-mode-group">
       <label>ゲームモード</label>
       <select id="game-mode">
         <option value="countup">Count-Up (8R)</option>
@@ -138,7 +182,8 @@
         <option value="cricket">Cricket (15R Limit)</option>
       </select>
     </div>
-    <div class="setup-group">
+
+    <div class="setup-group" id="player-count-group">
       <label>プレイヤー人数</label>
       <select id="player-count">
         <option value="1">1 Player</option>
@@ -147,11 +192,12 @@
         <option value="4">4 Players</option>
       </select>
     </div>
-    <button class="action-btn" style="width: 100%;" onclick="initGame()">🎮 ゲーム開始</button>
+
+    <button class="action-btn" style="width: 100%;" onclick="startApp()">🎮 スタート</button>
   </div>
 
   <div class="controls" id="cam-controls" style="display:none;">
-    <button class="action-btn" onclick="startCamera()">📷 1. カメラ起動</button>
+    <button class="action-btn" id="btn-start-cam" onclick="startCamera()">📷 1. カメラ起動</button>
     <button class="action-btn" id="btn-base" onclick="captureBase()" disabled>🎯 2. 基準撮影(ラウンド開始)</button>
   </div>
 
@@ -161,7 +207,7 @@
 
   <div id="status-msg"></div>
 
-  <!-- ゲーム情報表示 -->
+  <!-- ゲームUI -->
   <div id="game-ui" style="display:none;">
     <div class="game-info">
       <div class="player-turn" id="turn-display">P1 の番です</div>
@@ -188,16 +234,19 @@
 
       <div class="btn-group">
         <script>
-          const nums = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5];
-          nums.forEach(i => {
+          for (let i = 1; i <= 20; i++) {
             document.write(`<button onclick="manualScore(${i})">${i}</button>`);
-          });
+          }
         </script>
         <button class="special" onclick="manualSpecial('S-BULL', 25, 25)">S-BULL</button>
         <button class="special" onclick="manualSpecial('D-BULL', 50, 25)">D-BULL</button>
         <button onclick="manualSpecial('OUT', 0, 0)">OUT</button>
       </div>
+
+      <button class="abort-btn" style="width:100%;" onclick="abortGame()">🛑 ゲームを途中で終了する</button>
     </div>
+
+    <div id="live-stats-area"></div>
   </div>
 
 <script>
@@ -218,7 +267,10 @@
   let baseImageData = null;
   let currentMultiplier = 'S';
   
-  // ゲーム管理変数
+  let role = 'single';
+  let peer = null;
+  let conn = null;
+
   let gameMode = 'countup';
   let playerCount = 1;
   let currentRound = 1;
@@ -232,31 +284,124 @@
   let isDetecting = false;
   let lastHitTime = 0;
 
-  // ゲーム初期化
-  function initGame() {
-    gameMode = document.getElementById('game-mode').value;
-    playerCount = parseInt(document.getElementById('player-count').value);
-    
-    maxRounds = (gameMode === 'cricket') ? 15 : 8;
-    currentRound = 1;
-    currentPlayerIdx = 0;
-    
-    players = [];
-    for(let i=0; i<playerCount; i++) {
-      players.push({
-        name: `P${i+1}`,
-        score: (gameMode === '501') ? 501 : 0,
-        cricketState: {15:0, 16:0, 17:0, 18:0, 19:0, 20:0, 25:0} // クリケット用マーク数
+  function toggleRoleUI() {
+    role = document.getElementById('device-role').value;
+    document.getElementById('remote-input-group').style.display = (role === 'camera') ? 'block' : 'none';
+    document.getElementById('game-mode-group').style.display = (role === 'camera') ? 'none' : 'block';
+    document.getElementById('player-count-group').style.display = (role === 'camera') ? 'none' : 'block';
+  }
+
+  function startApp() {
+    role = document.getElementById('device-role').value;
+
+    if (role === 'display') {
+      initPeerDisplay();
+    } else if (role === 'camera') {
+      initPeerCamera();
+    } else {
+      initGame();
+    }
+  }
+
+  // P2P通信: ディスプレイ側の処理
+  function initPeerDisplay() {
+    const randomId = Math.floor(1000 + Math.random() * 9000).toString();
+    peer = new Peer(randomId);
+
+    statusMsg.innerHTML = `通信準備中...`;
+
+    peer.on('open', id => {
+      document.getElementById('setup-panel').style.display = 'none';
+      statusMsg.innerHTML = `カメラ端末でこのIDを入力してください: <br><span class="peer-id-badge">${id}</span>`;
+    });
+
+    peer.on('connection', c => {
+      conn = c;
+      statusMsg.innerText = "カメラ端末と接続されました！ゲームを開始します";
+      initGame();
+      setupDataListener();
+    });
+  }
+
+  // P2P通信: カメラ側の処理
+  function initPeerCamera() {
+    const targetId = document.getElementById('target-peer-id').value;
+    if (!targetId) { alert("接続用IDを入力してください"); return; }
+
+    peer = new Peer();
+    peer.on('open', () => {
+      statusMsg.innerText = "ディスプレイに接続中...";
+      conn = peer.connect(targetId);
+
+      conn.on('open', () => {
+        document.getElementById('setup-panel').style.display = 'none';
+        document.getElementById('cam-controls').style.display = 'flex';
+        document.getElementById('board-container').style.display = 'inline-block';
+        document.getElementById('game-ui').style.display = 'none'; // カメラ端末はボードメイン
+        statusMsg.innerText = "接続成功！「1. カメラ起動」を押してください";
+        setupDataListener();
       });
+    });
+  }
+
+  function sendData(type, payload) {
+    if (conn && conn.open) {
+      conn.send({ type, payload });
+    }
+  }
+
+  function setupDataListener() {
+    conn.on('data', data => {
+      if (data.type === 'SYNC_THROWS') {
+        throws = data.payload.throws;
+        currentThrowIndex = data.payload.currentThrowIndex;
+        updateUI();
+      } else if (data.type === 'START_ROUND') {
+        captureBase();
+      } else if (data.type === 'CONFIRM_ROUND') {
+        confirmRound(true);
+      }
+    });
+  }
+
+  function initGame() {
+    if (role !== 'camera') {
+      gameMode = document.getElementById('game-mode').value;
+      playerCount = parseInt(document.getElementById('player-count').value);
+      
+      maxRounds = (gameMode === 'cricket') ? 15 : 8;
+      currentRound = 1;
+      currentPlayerIdx = 0;
+      
+      players = [];
+      for(let i=0; i<playerCount; i++) {
+        players.push({
+          name: `P${i+1}`,
+          score: (gameMode === '501') ? 501 : 0,
+          cricketState: {20:0, 19:0, 18:0, 17:0, 16:0, 15:0, 25:0},
+          roundHistory: []
+        });
+      }
     }
 
     document.getElementById('setup-panel').style.display = 'none';
-    document.getElementById('cam-controls').style.display = 'flex';
-    document.getElementById('board-container').style.display = 'inline-block';
-    document.getElementById('game-ui').style.display = 'block';
+    if (role === 'single') {
+      document.getElementById('cam-controls').style.display = 'flex';
+      document.getElementById('board-container').style.display = 'inline-block';
+    }
+    
+    if (role !== 'camera') {
+      document.getElementById('game-ui').style.display = 'block';
+      updateScoreboardUI();
+      renderLiveStats();
+      statusMsg.innerText = "ゲーム開始！カメラ側の基準撮影を待っています";
+    }
+  }
 
-    updateScoreboardUI();
-    statusMsg.innerText = "「1. カメラ起動」を押してください";
+  function abortGame() {
+    if (confirm("ゲームを中断して最初の画面に戻りますか？")) {
+      location.reload();
+    }
   }
 
   async function startCamera() {
@@ -286,7 +431,8 @@
     updateUI();
     
     isDetecting = true;
-    statusMsg.innerText = `🎯 ${players[currentPlayerIdx].name} の番です (1投目)`;
+    statusMsg.innerText = `🎯 判定中... (1投目)`;
+    sendData('SYNC_THROWS', { throws, currentThrowIndex });
   }
 
   function updateLoop() {
@@ -354,28 +500,31 @@
         currentThrowIndex++;
         if (currentThrowIndex >= 3) {
           isDetecting = false;
-          statusMsg.innerText = "3投完了！内容を確認して確定してください";
+          statusMsg.innerText = "3投完了！";
         } else {
-          statusMsg.innerText = `🎯 ${players[currentPlayerIdx].name} (${currentThrowIndex + 1}投目)`;
+          statusMsg.innerText = `🎯 (${currentThrowIndex + 1}投目検知)`;
         }
 
         selectedSlotIndex = Math.min(currentThrowIndex, 2);
         updateUI();
+        sendData('SYNC_THROWS', { throws, currentThrowIndex });
       }
     }
   }
 
-  // スコア確定・プレイヤー切り替え
-  function confirmRound() {
-    let p = players[currentPlayerIdx];
+  function confirmRound(isRemote = false) {
+    if (!isRemote && role === 'camera') {
+      sendData('CONFIRM_ROUND', {});
+      return;
+    }
 
-    // ゲームモードごとの点数反映
+    let p = players[currentPlayerIdx];
+    const roundTotal = throws.reduce((s, t) => s + (t ? t.pts : 0), 0);
+
     if (gameMode === 'countup') {
-      const roundTotal = throws.reduce((s, t) => s + (t ? t.pts : 0), 0);
       p.score += roundTotal;
     } 
     else if (gameMode === '501') {
-      const roundTotal = throws.reduce((s, t) => s + (t ? t.pts : 0), 0);
       if (p.score - roundTotal === 0) {
         p.score = 0;
         alert(`🎉 ${p.name} が 501 をあがりました！勝利！`);
@@ -398,11 +547,8 @@
             let addMarks = Math.min(needed, mult);
             p.cricketState[num] += addMarks;
             let overflow = mult - addMarks;
-            // 他のプレイヤー全員がクローズしていないか確認して加点
             let isClosedAll = players.every(pl => pl.cricketState[num] >= 3);
-            if (overflow > 0 && !isClosedAll) {
-              p.score += (num * overflow);
-            }
+            if (overflow > 0 && !isClosedAll) p.score += (num * overflow);
           } else {
             let isClosedAll = players.every(pl => pl.cricketState[num] >= 3);
             if (!isClosedAll) p.score += (num * mult);
@@ -411,7 +557,8 @@
       });
     }
 
-    // プレイヤー＆ラウンド交代
+    p.roundHistory.push(roundTotal);
+
     currentPlayerIdx++;
     if (currentPlayerIdx >= playerCount) {
       currentPlayerIdx = 0;
@@ -425,12 +572,56 @@
     }
 
     updateScoreboardUI();
+    renderLiveStats();
     isDetecting = false;
-    statusMsg.innerText = `次は ${players[currentPlayerIdx].name} の番です。「2. 基準撮影」を押してください`;
+    statusMsg.innerText = `次は ${players[currentPlayerIdx].name} の番です`;
     document.getElementById('btn-confirm').disabled = true;
   }
 
+  function renderLiveStats() {
+    const container = document.getElementById('live-stats-area');
+    if (!container) return;
+    
+    if (gameMode === 'cricket') {
+      const targets = [20, 19, 18, 17, 16, 15, 25];
+      const markIcons = ["-", "╱", "╳", "Ⓧ"];
+
+      let html = `<table class="stats-table"><tr><th>TARGET</th>`;
+      players.forEach(p => { html += `<th>${p.name}</th>`; });
+      html += `</tr>`;
+
+      targets.forEach(t => {
+        let label = t === 25 ? 'BULL' : t;
+        html += `<tr><td><b>${label}</b></td>`;
+        players.forEach(p => {
+          let m = p.cricketState[t] || 0;
+          let icon = markIcons[Math.min(m, 3)];
+          html += `<td>${icon}</td>`;
+        });
+        html += `</tr>`;
+      });
+      html += `</table>`;
+      container.innerHTML = html;
+    } else {
+      let html = `<table class="stats-table"><tr><th>R</th>`;
+      players.forEach(p => { html += `<th>${p.name}</th>`; });
+      html += `</tr>`;
+
+      for (let r = 1; r <= maxRounds; r++) {
+        html += `<tr><td>R${r}</td>`;
+        players.forEach(p => {
+          let pts = p.roundHistory[r - 1] !== undefined ? p.roundHistory[r - 1] : '-';
+          html += `<td>${pts}</td>`;
+        });
+        html += `</tr>`;
+      }
+      html += `</table>`;
+      container.innerHTML = html;
+    }
+  }
+
   function updateScoreboardUI() {
+    if (role === 'camera') return;
     document.getElementById('turn-display').innerText = `${players[currentPlayerIdx].name} の番です`;
     document.getElementById('round-display').innerText = `Round ${currentRound} / ${maxRounds}`;
 
@@ -451,10 +642,12 @@
   function updateUI() {
     for (let i = 0; i < 3; i++) {
       const scoreText = document.getElementById(`score-${i+1}`);
-      scoreText.innerText = throws[i] ? throws[i].label : "-";
-      document.getElementById(`box-${i+1}`).classList.toggle('active', i === selectedSlotIndex);
+      if (scoreText) scoreText.innerText = throws[i] ? throws[i].label : "-";
+      const box = document.getElementById(`box-${i+1}`);
+      if (box) box.classList.toggle('active', i === selectedSlotIndex);
     }
-    document.getElementById('btn-confirm').disabled = (currentThrowIndex < 3 && !throws.some(t => t !== null));
+    const btnConfirm = document.getElementById('btn-confirm');
+    if (btnConfirm) btnConfirm.disabled = (currentThrowIndex < 3 && !throws.some(t => t !== null));
   }
 
   function drawOverlayBoard() {
@@ -539,11 +732,13 @@
     let multVal = currentMultiplier === 'T' ? 3 : (currentMultiplier === 'D' ? 2 : 1);
     throws[selectedSlotIndex] = { label: `${multText}${num}`, pts: num * multVal, num: num, mult: multVal, x: null, y: null };
     updateUI();
+    sendData('SYNC_THROWS', { throws, currentThrowIndex });
   }
 
   function manualSpecial(label, pts, num) {
     throws[selectedSlotIndex] = { label: label, pts: pts, num: num, mult: pts === 50 ? 2 : (pts === 25 ? 1 : 0), x: null, y: null };
     updateUI();
+    sendData('SYNC_THROWS', { throws, currentThrowIndex });
   }
 
   drawOverlayBoard();
