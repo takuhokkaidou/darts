@@ -3,11 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <!-- タイトルにバージョン番号を記載 (Ver 1.2) -->
-  <title>ダーツ自動判定＆手直しシステム Ver 1.2</title>
+  <title>ダーツ自動判定＆手直しシステム Ver 2.0</title>
   <style>
     body { 
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; 
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
       text-align: center; 
       background-color: #121212; 
       color: #fff; 
@@ -23,29 +22,40 @@
       display: block; 
       border-radius: 50%; 
       box-shadow: 0 0 20px rgba(0, 0, 0, 0.8); 
-      cursor: pointer; 
       background: #000;
-      width: 360px;
-      height: 360px;
+      width: 340px;
+      height: 340px;
     }
-    #score-display { 
-      font-size: 1.8rem; 
-      font-weight: bold; 
-      color: #00ffcc; 
-      margin: 8px 0; 
-      min-height: 2.4rem; 
-      background: rgba(0,0,0,0.5); 
-      padding: 6px; 
-      border-radius: 6px;
-      border: 1px solid #333;
+    #status-msg { font-size: 1.1rem; color: #00ffcc; margin: 5px 0; font-weight: bold; min-height: 1.5rem; }
+    
+    /* 3投分のスコア表示エリア */
+    .throws-container {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin: 10px 0;
     }
-    .controls { margin-bottom: 10px; }
+    .throw-box {
+      background: #222;
+      border: 1px solid #444;
+      border-radius: 8px;
+      padding: 8px 12px;
+      min-width: 80px;
+    }
+    .throw-box.active { border-color: #00ffcc; box-shadow: 0 0 8px #00ffcc; }
+    .throw-label { font-size: 0.75rem; color: #888; }
+    .throw-score { font-size: 1.2rem; font-weight: bold; color: #fff; margin-top: 2px; }
+
+    .total-score { font-size: 1.5rem; color: #ff9800; font-weight: bold; margin: 5px 0; }
+
+    .controls { margin-bottom: 10px; display: flex; justify-content: center; gap: 8px; }
     .panel { background: #1e1e1e; padding: 10px; border-radius: 12px; max-width: 420px; margin: 5px auto; border: 1px solid #333; }
     .panel-title { font-size: 0.9rem; color: #aaa; margin-bottom: 8px; }
     .btn-group { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; }
+    
     button { 
-      padding: 10px 14px; 
-      font-size: 1rem; 
+      padding: 10px 12px; 
+      font-size: 0.95rem; 
       border: none; 
       border-radius: 6px; 
       background-color: #333; 
@@ -57,30 +67,54 @@
     }
     button:active { background-color: #555; }
     button.action-btn { background-color: #ff9800; font-weight: bold; color: #000; }
+    button.confirm-btn { background-color: #00cc88; font-weight: bold; color: #000; font-size: 1.1rem; padding: 12px; }
     button.multiplier { background-color: #005588; font-weight: bold;}
     button.active { background-color: #00cc88; box-shadow: 0 0 10px #00cc88; }
     button.special { background-color: #aa2222; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
   </style>
 </head>
 <body>
 
-  <h1>🎯 ダーツ自動判定＆手直し <span class="version-tag">Ver 1.2</span></h1>
+  <h1>🎯 ダーツ自動判定 <span class="version-tag">Ver 2.0</span></h1>
 
   <video id="video" autoplay playsinline></video>
   
   <div class="controls">
-    <button class="action-btn" onclick="startCamera()">📷 カメラ起動</button>
+    <button class="action-btn" onclick="startCamera()">📷 1. カメラ起動</button>
+    <button class="action-btn" id="btn-base" onclick="captureBase()" disabled>🎯 2. 基準撮影(開始)</button>
   </div>
 
   <div id="board-container">
     <canvas id="dartboard" width="720" height="720"></canvas>
   </div>
 
-  <div id="score-display">「カメラ起動」を押してください</div>
+  <div id="status-msg">「1. カメラ起動」を押してください</div>
 
-  <div class="panel">
-    <div class="panel-title">🔧 手動で修正・入力</div>
-    
+  <!-- 3投のスコア表示 -->
+  <div class="throws-container">
+    <div class="throw-box" id="box-1">
+      <div class="throw-label">1投目</div>
+      <div class="throw-score" id="score-1">-</div>
+    </div>
+    <div class="throw-box" id="box-2">
+      <div class="throw-label">2投目</div>
+      <div class="throw-score" id="score-2">-</div>
+    </div>
+    <div class="throw-box" id="box-3">
+      <div class="throw-label">3投目</div>
+      <div class="throw-score" id="score-3">-</div>
+    </div>
+  </div>
+
+  <div class="total-score" id="total-display">合計: 0 点</div>
+
+  <!-- 確定・修正パネル -->
+  <div class="panel" id="action-panel">
+    <div class="panel-title" id="panel-state-text">自動検知待機中...</div>
+    <button class="confirm-btn" id="btn-confirm" onclick="confirmRound()" style="width: 100%; margin-bottom: 10px;" disabled>✅ 点数を確定して次のラウンドへ</button>
+
+    <div class="panel-title">🔧 スコアを手動修正 (選択中のスロットへ適用)</div>
     <div class="btn-group" style="margin-bottom: 8px;">
       <button class="multiplier active" id="btn-S" onclick="setMultiplier('S')">Single</button>
       <button class="multiplier" id="btn-D" onclick="setMultiplier('D')">Double</button>
@@ -104,59 +138,165 @@
   const video = document.getElementById('video');
   const canvas = document.getElementById('dartboard');
   const ctx = canvas.getContext('2d');
-  const scoreDisplay = document.getElementById('score-display');
+  const statusMsg = document.getElementById('status-msg');
   
-  // 高解像度ディスプレイ（Galaxy等）向け内部解像度調整
   const centerX = canvas.width / 2;
   const centerY = canvas.height / 2;
   const doubleOuterRadius = Math.min(centerX, centerY) * 0.78;
-
   const BOARD_NUMBERS = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5];
-  
+
+  // 画像処理用キャンバス
+  const procCanvas = document.createElement('canvas');
+  procCanvas.width = 180;
+  procCanvas.height = 180;
+  const procCtx = procCanvas.getContext('2d');
+
+  let baseImageData = null;
   let currentMultiplier = 'S';
-  let lastClick = null;
+  
+  // ラウンド状態管理
+  let throws = [null, null, null]; // [{label, pts, x, y}]
+  let currentThrowIndex = 0; // 0, 1, 2
+  let selectedSlotIndex = 0; // 手動修正用
+  let isDetecting = false;
+  let lastHitTime = 0;
 
-  // --- カメラ起動（Galaxyマルチカメラ最適化版） ---
+  // --- カメラ起動 ---
   async function startCamera() {
-    scoreDisplay.innerText = "カメラ起動中...";
+    statusMsg.innerText = "カメラ起動中...";
     try {
-      let constraints = {
-        video: {
-          facingMode: { ideal: "environment" },
-          width: { ideal: 1280 },
-          height: { ideal: 1280 }
-        }
-      };
-
-      let stream = await navigator.mediaDevices.getUserMedia(constraints);
+      let stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 1280 } }
+      });
       video.srcObject = stream;
       await video.play();
-      scoreDisplay.innerText = "タップで判定 / 手動修正可能";
+      document.getElementById('btn-base').disabled = false;
+      statusMsg.innerText = "「2. 基準撮影」を押してください";
       requestAnimationFrame(updateLoop);
     } catch (err) {
-      alert("カメラ起動エラー: アクセス許可を確認してください。\n" + err);
-      scoreDisplay.innerText = "カメラエラー";
+      alert("カメラエラー: " + err);
+      statusMsg.innerText = "カメラ起動失敗";
     }
   }
 
-  // メイン描画ループ
+  // 基準画像の撮影（空ボードの記憶）
+  function captureBase() {
+    procCtx.drawImage(video, 0, 0, procCanvas.width, procCanvas.height);
+    baseImageData = procCtx.getImageData(0, 0, procCanvas.width, procCanvas.height);
+    
+    // スコア初期化
+    throws = [null, null, null];
+    currentThrowIndex = 0;
+    selectedSlotIndex = 0;
+    updateUI();
+    
+    isDetecting = true;
+    statusMsg.innerText = "🎯 ダーツを投げてくだい (1投目)";
+  }
+
+  // メイン描画＆差分検知ループ
   function updateLoop() {
     if (video.readyState === video.HAVE_ENOUGH_DATA) {
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      drawOverlayBoard();
       
-      if(lastClick) {
-        ctx.beginPath();
-        ctx.arc(lastClick.x, lastClick.y, 12, 0, Math.PI * 2);
-        ctx.fillStyle = "rgba(255, 0, 85, 0.9)";
-        ctx.fill();
-        ctx.strokeStyle = "#fff"; ctx.lineWidth = 3; ctx.stroke();
+      // 自動画像判定処理
+      if (isDetecting && baseImageData && currentThrowIndex < 3) {
+        const now = Date.now();
+        if (now - lastHitTime > 2000) { // 連打防止インターバル（2秒）
+          detectDartHit();
+        }
       }
+
+      drawOverlayBoard();
+      drawHitPoints();
     }
     requestAnimationFrame(updateLoop);
   }
 
-  // ガイドライン描画
+  // 差分（ダーツの刺さり）検知処理
+  function detectDartHit() {
+    procCtx.drawImage(video, 0, 0, procCanvas.width, procCanvas.height);
+    const currentData = procCtx.getImageData(0, 0, procCanvas.width, procCanvas.height);
+
+    let maxDiff = 0;
+    let diffX = 0, diffY = 0, diffCount = 0;
+
+    // ピクセル単位で色の変化を計測
+    for (let i = 0; i < currentData.data.length; i += 4) {
+      const rDiff = Math.abs(currentData.data[i] - baseImageData.data[i]);
+      const gDiff = Math.abs(currentData.data[i+1] - baseImageData.data[i+1]);
+      const bDiff = Math.abs(currentData.data[i+2] - baseImageData.data[i+2]);
+      const diff = rDiff + gDiff + bDiff;
+
+      if (diff > 120) { // 変化の閾値
+        const pixelIdx = i / 4;
+        const px = pixelIdx % procCanvas.width;
+        const py = Math.floor(pixelIdx / procCanvas.width);
+        
+        diffX += px;
+        diffY += py;
+        diffCount++;
+      }
+    }
+
+    // 一定以上の画素に変化があればダーツヒットと判定
+    if (diffCount > 35) {
+      const avgPx = diffX / diffCount;
+      const avgPy = diffY / diffCount;
+
+      // 本番キャンバス座標に変換
+      const canvasX = (avgPx / procCanvas.width) * canvas.width;
+      const canvasY = (avgPy / procCanvas.height) * canvas.height;
+
+      const score = calculateScore(canvasX, canvasY);
+      
+      throws[currentThrowIndex] = { label: score.text, pts: score.pts, x: canvasX, y: canvasY };
+      lastHitTime = Date.now();
+
+      // 現在のフレームを次の基準画像として更新（重ね投げ対応）
+      baseImageData = currentData;
+
+      currentThrowIndex++;
+      if (currentThrowIndex >= 3) {
+        isDetecting = false;
+        statusMsg.innerText = "3投完了！内容を確認して確定してください";
+      } else {
+        statusMsg.innerText = `🎯 ダーツを投げてくだい (${currentThrowIndex + 1}投目)`;
+      }
+
+      selectedSlotIndex = Math.min(currentThrowIndex, 2);
+      updateUI();
+    }
+  }
+
+  // UI描画更新
+  function updateUI() {
+    for (let i = 0; i < 3; i++) {
+      const box = document.getElementById(`box-${i+1}`);
+      const scoreText = document.getElementById(`score-${i+1}`);
+      
+      if (throws[i]) {
+        scoreText.innerText = throws[i].label;
+      } else {
+        scoreText.innerText = "-";
+      }
+
+      if (i === selectedSlotIndex) {
+        box.classList.add('active');
+      } else {
+        box.classList.remove('active');
+      }
+    }
+
+    // 合計点数
+    const total = throws.reduce((sum, t) => sum + (t ? t.pts : 0), 0);
+    document.getElementById('total-display').innerText = `合計: ${total} 点`;
+
+    // 確定ボタンの活性化
+    document.getElementById('btn-confirm').disabled = (currentThrowIndex < 3 && !throws.some(t => t !== null));
+  }
+
+  // 枠線ガイド描画
   function drawOverlayBoard() {
     ctx.strokeStyle = "rgba(0, 255, 204, 0.85)";
     ctx.lineWidth = 3;
@@ -182,7 +322,26 @@
     }
   }
 
-  // スコア計算
+  // 刺さったポイントの描画
+  function drawHitPoints() {
+    throws.forEach((t, idx) => {
+      if (t && t.x && t.y) {
+        ctx.beginPath();
+        ctx.arc(t.x, t.y, 14, 0, Math.PI * 2);
+        ctx.fillStyle = idx === selectedSlotIndex ? "rgba(255, 0, 85, 1.0)" : "rgba(255, 152, 0, 0.8)";
+        ctx.fill();
+        ctx.strokeStyle = "#fff"; ctx.lineWidth = 3; ctx.stroke();
+        
+        ctx.fillStyle = "#fff";
+        ctx.font = "bold 16px sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(idx + 1, t.x, t.y);
+      }
+    });
+  }
+
+  // 座標からスコア計算
   function calculateScore(x, y) {
     const dx = x - centerX;
     const dy = y - centerY;
@@ -199,29 +358,17 @@
     let index = Math.floor(adjustedAngle / 18);
     let num = BOARD_NUMBERS[index];
 
-    if (r >= 0.58 && r <= 0.65) {
-      return { text: `Triple ${num}`, pts: num * 3 };
-    } else if (r >= 0.92 && r <= 1.0) {
-      return { text: `Double ${num}`, pts: num * 2 };
-    } else {
-      return { text: `Single ${num}`, pts: num };
-    }
+    if (r >= 0.58 && r <= 0.65) return { text: `T${num}`, pts: num * 3 };
+    if (r >= 0.92 && r <= 1.0) return { text: `D${num}`, pts: num * 2 };
+    return { text: `S${num}`, pts: num };
   }
 
-  // スマホ画面のタッチ座標補正
-  canvas.addEventListener('click', (e) => {
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
+  // 修正する投（1〜3投目）の選択
+  document.getElementById('box-1').onclick = () => { selectedSlotIndex = 0; updateUI(); };
+  document.getElementById('box-2').onclick = () => { selectedSlotIndex = 1; updateUI(); };
+  document.getElementById('box-3').onclick = () => { selectedSlotIndex = 2; updateUI(); };
 
-    const x = (e.clientX - rect.left) * scaleX;
-    const y = (e.clientY - rect.top) * scaleY;
-
-    lastClick = {x, y};
-    const result = calculateScore(x, y);
-    scoreDisplay.innerText = `${result.text} (${result.pts}点)`;
-  });
-
+  // 手動入力・修正関数
   function setMultiplier(type) {
     currentMultiplier = type;
     document.querySelectorAll('.multiplier').forEach(btn => btn.classList.remove('active'));
@@ -229,17 +376,24 @@
   }
 
   function manualScore(num) {
-    let multText = currentMultiplier === 'T' ? 'Triple ' : (currentMultiplier === 'D' ? 'Double ' : 'Single ');
+    let multText = currentMultiplier === 'T' ? 'T' : (currentMultiplier === 'D' ? 'D' : 'S');
     let multVal = currentMultiplier === 'T' ? 3 : (currentMultiplier === 'D' ? 2 : 1);
-    let pts = num * multVal;
-    scoreDisplay.innerText = `[修正] ${multText}${num} (${pts}点)`;
+    throws[selectedSlotIndex] = { label: `${multText}${num}`, pts: num * multVal, x: null, y: null };
+    updateUI();
   }
 
   function manualSpecial(label, pts) {
-    scoreDisplay.innerText = `[修正] ${label} (${pts}点)`;
+    throws[selectedSlotIndex] = { label: label, pts: pts, x: null, y: null };
+    updateUI();
   }
 
-  // 初回表示用
+  // 次のラウンドへ確定
+  function confirmRound() {
+    alert(`【ラウンド確定】\nスコア: ${document.getElementById('total-display').innerText}`);
+    captureBase(); // ダーツを抜いた状態で再度基準撮影を行って次ラウンドへ
+  }
+
+  // 初回ガイドライン表示
   drawOverlayBoard();
 </script>
 
