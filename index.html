@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ダーツ自動判定＆手直しシステム</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; background-color: #121212; color: #fff; margin: 0; padding: 10px; }
+    h1 { font-size: 1.2rem; margin: 5px 0; }
+    #board-container { position: relative; display: inline-block; margin: 5px auto; touch-action: manipulation; }
+    video { display: none; } /* カメラ映像用（非表示） */
+    canvas { display: block; border-radius: 50%; box-shadow: 0 0 15px rgba(0,0,0,0.5); cursor: pointer; background: #000; }
+    #score-display { font-size: 2rem; font-weight: bold; color: #00ffcc; margin: 8px 0; min-height: 2.4rem; background: rgba(0,0,0,0.4); padding: 5px; border-radius: 4px;}
+    .controls { margin-bottom: 10px; }
+    .panel { background: #1e1e1e; padding: 10px; border-radius: 8px; max-width: 420px; margin: 5px auto; border: 1px solid #333; }
+    .panel-title { font-size: 0.9rem; color: #aaa; margin-bottom: 8px; }
+    .btn-group { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; }
+    button { padding: 10px 14px; font-size: 1rem; border: none; border-radius: 4px; background-color: #333; color: #fff; cursor: pointer; flex-grow: 1; min-width: 40px;}
+    button:active { background-color: #555; }
+    button.action-btn { background-color: #ff9800; font-weight: bold; color: #000; }
+    button.multiplier { background-color: #005588; font-weight: bold;}
+    button.active { background-color: #00cc88; box-shadow: 0 0 10px #00cc88; }
+    button.special { background-color: #aa2222; }
+  </style>
+</head>
+<body>
+
+  <h1>🎯 ダーツ自動判定＆手直し</h1>
+
+  <!-- 非表示のビデオタグ -->
+  <video id="video" autoplay playsinline></video>
+  
+  <div class="controls">
+    <button class="action-btn" onclick="startCamera()">📷 カメラ起動</button>
+    <button class="action-btn" onclick="setBaseFrame()">📸 基準（刺さる前）撮影</button>
+  </div>
+
+  <div id="board-container">
+    <canvas id="dartboard" width="380" height="380"></canvas>
+  </div>
+
+  <div id="score-display">カメラを起動してください</div>
+
+  <div class="panel">
+    <div class="panel-title">🔧 手動で修正・入力</div>
+    
+    <div class="btn-group" style="margin-bottom: 8px;">
+      <button class="multiplier active" id="btn-S" onclick="setMultiplier('S')">Single</button>
+      <button class="multiplier" id="btn-D" onclick="setMultiplier('D')">Double</button>
+      <button class="multiplier" id="btn-T" onclick="setMultiplier('T')">Triple</button>
+    </div>
+
+    <div class="btn-group">
+      <script>
+        const nums = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5];
+        nums.forEach(i => {
+          document.write(`<button onclick="manualScore(${i})">${i}</button>`);
+        });
+      </script>
+      <button class="special" onclick="manualSpecial('S-BULL', 25)">S-BULL</button>
+      <button class="special" onclick="manualSpecial('D-BULL', 50)">D-BULL</button>
+      <button onclick="manualSpecial('OUT', 0)">OUT</button>
+    </div>
+  </div>
+
+<script>
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('dartboard');
+  const ctx = canvas.getContext('2d');
+  const scoreDisplay = document.getElementById('score-display');
+  
+  const centerX = canvas.width / 2;
+  const centerY = canvas.height / 2;
+  const doubleOuterRadius = Math.min(centerX, centerY) * 0.78;
+  const boardRadius = Math.min(centerX, centerY) * 0.98;
+
+  const BOARD_NUMBERS = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5];
+  
+  let currentMultiplier = 'S';
+  let lastClick = null;
+  let baseFrameData = null; // ダーツが刺さる前の画像データ
+
+  // --- カメラ起動 ---
+  async function startCamera() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment", width: { ideal: 640 }, height: { ideal: 640 } }
+      });
+      video.srcObject = stream;
+      video.play();
+      scoreDisplay.innerText = "基準フレームを撮影してください";
+      requestAnimationFrame(updateLoop);
+    } catch (err) {
+      alert("カメラの起動に失敗しました: " + err);
+    }
+  }
+
+  // --- メインループ（カメラ描画 + ダーツガイド描画） ---
+  function updateLoop() {
+    if (video.readyState === video.HAVE_ENOUGH_DATA) {
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      drawOverlayBoard();
+      
+      if(lastClick) {
+        ctx.beginPath();
+        ctx.arc(lastClick.x, lastClick.y, 6, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(255, 0, 85, 0.9)";
+        ctx.fill();
+        ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.stroke();
+      }
+    }
+    requestAnimationFrame(updateLoop);
+  }
+
+  // --- 透過ガイドラインの描画 ---
+  function drawOverlayBoard() {
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.4)";
+    ctx.lineWidth = 1;
+
+    // ダブル＆トリプルリングガイド
+    ctx.beginPath(); ctx.arc(centerX, centerY, doubleOuterRadius, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(centerX, centerY, doubleOuterRadius * 0.92, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(centerX, centerY, doubleOuterRadius * 0.65, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(centerX, centerY, doubleOuterRadius * 0.58, 0, Math.PI * 2); ctx.stroke();
+
+    // ブルガイド
+    ctx.beginPath(); ctx.arc(centerX, centerY, doubleOuterRadius * 0.09, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(centerX, centerY, doubleOuterRadius * 0.04, 0, Math.PI * 2); ctx.stroke();
+
+    // ナンバーガイド枠外文字
+    for (let i = 0; i < 20; i++) {
+      const angleRad = (i * 18 - 90) * Math.PI / 180;
+      const textRadius = doubleOuterRadius * 1.12;
+      const x = centerX + textRadius * Math.cos(angleRad);
+      const y = centerY + textRadius * Math.sin(angleRad);
+
+      ctx.fillStyle = "rgba(0, 255, 204, 0.9)";
+      ctx.font = "bold 15px sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(BOARD_NUMBERS[i], x, y);
+    }
+  }
+
+  // --- 基準（刺さる前）画像の保存 ---
+  function setBaseFrame() {
+    baseFrameData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    scoreDisplay.innerText = "準備完了！ダーツを投げてください";
+  }
+
+  // --- 簡易画像差分（タップ時または自動検出時） ---
+  function detectDart(x, y) {
+    lastClick = {x, y};
+    const result = calculateScore(x, y);
+    scoreDisplay.innerText = `${result.text} (${result.pts}点)`;
+  }
+
+  // 点数計算
+  function calculateScore(x, y) {
+    const dx = x - centerX;
+    const dy = y - centerY;
+    const distance = Math.hypot(dx, dy);
+    const r = distance / doubleOuterRadius;
+
+    if (r <= 0.04) return { text: "D-BULL", pts: 50 };
+    if (r <= 0.09) return { text: "S-BULL", pts: 25 };
+    if (r > 1.0)  return { text: "OUT", pts: 0 };
+
+    let angleRad = Math.atan2(dx, -dy);
+    let angleDeg = (angleRad * 180 / Math.PI + 360) % 360;
+    let adjustedAngle = (angleDeg + 9) % 360;
+    let index = Math.floor(adjustedAngle / 18);
+    let num = BOARD_NUMBERS[index];
+
+    if (r >= 0.58 && r <= 0.65) {
+      return { text: `Triple ${num}`, pts: num * 3 };
+    } else if (r >= 0.92 && r <= 1.0) {
+      return { text: `Double ${num}`, pts: num * 2 };
+    } else {
+      return { text: `Single ${num}`, pts: num };
+    }
+  }
+
+  // タップイベント
+  canvas.addEventListener('click', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    detectDart(x, y);
+  });
+
+  // 手動修正処理
+  function setMultiplier(type) {
+    currentMultiplier = type;
+    document.querySelectorAll('.multiplier').forEach(btn => btn.classList.remove('active'));
+    document.getElementById(`btn-${type}`).classList.add('active');
+  }
+
+  function manualScore(num) {
+    let multText = currentMultiplier === 'T' ? 'Triple ' : (currentMultiplier === 'D' ? 'Double ' : 'Single ');
+    let multVal = currentMultiplier === 'T' ? 3 : (currentMultiplier === 'D' ? 2 : 1);
+    let pts = num * multVal;
+    scoreDisplay.innerText = `[修正] ${multText}${num} (${pts}点)`;
+  }
+
+  function manualSpecial(label, pts) {
+    scoreDisplay.innerText = `[修正] ${label} (${pts}点)`;
+  }
+</script>
+
+</body>
+</html>
