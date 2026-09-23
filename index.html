@@ -2,20 +2,59 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ダーツ自動判定＆手直しシステム</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <!-- タイトルにバージョン番号を記載 (Ver 1.2) -->
+  <title>ダーツ自動判定＆手直しシステム Ver 1.2</title>
   <style>
-    body { font-family: sans-serif; text-align: center; background-color: #121212; color: #fff; margin: 0; padding: 10px; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; 
+      text-align: center; 
+      background-color: #121212; 
+      color: #fff; 
+      margin: 0; 
+      padding: 10px;
+      touch-action: manipulation;
+    }
     h1 { font-size: 1.2rem; margin: 5px 0; }
-    #board-container { position: relative; display: inline-block; margin: 5px auto; touch-action: manipulation; }
+    .version-tag { font-size: 0.8rem; color: #00ffcc; margin-left: 5px; }
+    #board-container { position: relative; display: inline-block; margin: 5px auto; }
     video { display: none; }
-    canvas { display: block; border-radius: 50%; box-shadow: 0 0 15px rgba(0,0,0,0.5); cursor: pointer; background: #000; }
-    #score-display { font-size: 1.8rem; font-weight: bold; color: #00ffcc; margin: 8px 0; min-height: 2.4rem; background: rgba(0,0,0,0.4); padding: 5px; border-radius: 4px;}
+    canvas { 
+      display: block; 
+      border-radius: 50%; 
+      box-shadow: 0 0 20px rgba(0, 0, 0, 0.8); 
+      cursor: pointer; 
+      background: #000;
+      width: 360px;
+      height: 360px;
+    }
+    #score-display { 
+      font-size: 1.8rem; 
+      font-weight: bold; 
+      color: #00ffcc; 
+      margin: 8px 0; 
+      min-height: 2.4rem; 
+      background: rgba(0,0,0,0.5); 
+      padding: 6px; 
+      border-radius: 6px;
+      border: 1px solid #333;
+    }
     .controls { margin-bottom: 10px; }
-    .panel { background: #1e1e1e; padding: 10px; border-radius: 8px; max-width: 420px; margin: 5px auto; border: 1px solid #333; }
+    .panel { background: #1e1e1e; padding: 10px; border-radius: 12px; max-width: 420px; margin: 5px auto; border: 1px solid #333; }
     .panel-title { font-size: 0.9rem; color: #aaa; margin-bottom: 8px; }
     .btn-group { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; }
-    button { padding: 10px 14px; font-size: 1rem; border: none; border-radius: 4px; background-color: #333; color: #fff; cursor: pointer; flex-grow: 1; min-width: 40px;}
+    button { 
+      padding: 10px 14px; 
+      font-size: 1rem; 
+      border: none; 
+      border-radius: 6px; 
+      background-color: #333; 
+      color: #fff; 
+      cursor: pointer; 
+      flex-grow: 1; 
+      min-width: 40px;
+      -webkit-tap-highlight-color: transparent;
+    }
     button:active { background-color: #555; }
     button.action-btn { background-color: #ff9800; font-weight: bold; color: #000; }
     button.multiplier { background-color: #005588; font-weight: bold;}
@@ -25,7 +64,7 @@
 </head>
 <body>
 
-  <h1>🎯 ダーツ自動判定＆手直し</h1>
+  <h1>🎯 ダーツ自動判定＆手直し <span class="version-tag">Ver 1.2</span></h1>
 
   <video id="video" autoplay playsinline></video>
   
@@ -34,7 +73,7 @@
   </div>
 
   <div id="board-container">
-    <canvas id="dartboard" width="360" height="360"></canvas>
+    <canvas id="dartboard" width="720" height="720"></canvas>
   </div>
 
   <div id="score-display">「カメラ起動」を押してください</div>
@@ -67,6 +106,7 @@
   const ctx = canvas.getContext('2d');
   const scoreDisplay = document.getElementById('score-display');
   
+  // 高解像度ディスプレイ（Galaxy等）向け内部解像度調整
   const centerX = canvas.width / 2;
   const centerY = canvas.height / 2;
   const doubleOuterRadius = Math.min(centerX, centerY) * 0.78;
@@ -76,26 +116,25 @@
   let currentMultiplier = 'S';
   let lastClick = null;
 
-  // --- カメラ起動（エラー対策強化版） ---
+  // --- カメラ起動（Galaxyマルチカメラ最適化版） ---
   async function startCamera() {
     scoreDisplay.innerText = "カメラ起動中...";
     try {
-      let stream;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { exact: "environment" } }
-        });
-      } catch (e) {
-        // 背面カメラの指定で失敗したら通常の指定で試す
-        stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      }
-      
+      let constraints = {
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1280 },
+          height: { ideal: 1280 }
+        }
+      };
+
+      let stream = await navigator.mediaDevices.getUserMedia(constraints);
       video.srcObject = stream;
       await video.play();
       scoreDisplay.innerText = "タップで判定 / 手動修正可能";
       requestAnimationFrame(updateLoop);
     } catch (err) {
-      alert("カメラの起動に失敗しました。アクセス権限を確認してください:\n" + err);
+      alert("カメラ起動エラー: アクセス許可を確認してください。\n" + err);
       scoreDisplay.innerText = "カメラエラー";
     }
   }
@@ -108,19 +147,19 @@
       
       if(lastClick) {
         ctx.beginPath();
-        ctx.arc(lastClick.x, lastClick.y, 6, 0, Math.PI * 2);
+        ctx.arc(lastClick.x, lastClick.y, 12, 0, Math.PI * 2);
         ctx.fillStyle = "rgba(255, 0, 85, 0.9)";
         ctx.fill();
-        ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.stroke();
+        ctx.strokeStyle = "#fff"; ctx.lineWidth = 3; ctx.stroke();
       }
     }
     requestAnimationFrame(updateLoop);
   }
 
-  // ボードのガイドライン描画
+  // ガイドライン描画
   function drawOverlayBoard() {
-    ctx.strokeStyle = "rgba(0, 255, 204, 0.8)";
-    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = "rgba(0, 255, 204, 0.85)";
+    ctx.lineWidth = 3;
 
     ctx.beginPath(); ctx.arc(centerX, centerY, doubleOuterRadius, 0, Math.PI * 2); ctx.stroke();
     ctx.beginPath(); ctx.arc(centerX, centerY, doubleOuterRadius * 0.92, 0, Math.PI * 2); ctx.stroke();
@@ -136,7 +175,7 @@
       const y = centerY + textRadius * Math.sin(angleRad);
 
       ctx.fillStyle = "#00ffcc";
-      ctx.font = "bold 15px sans-serif";
+      ctx.font = "bold 30px sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText(BOARD_NUMBERS[i], x, y);
@@ -169,10 +208,15 @@
     }
   }
 
+  // スマホ画面のタッチ座標補正
   canvas.addEventListener('click', (e) => {
     const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+
+    const x = (e.clientX - rect.left) * scaleX;
+    const y = (e.clientY - rect.top) * scaleY;
+
     lastClick = {x, y};
     const result = calculateScore(x, y);
     scoreDisplay.innerText = `${result.text} (${result.pts}点)`;
