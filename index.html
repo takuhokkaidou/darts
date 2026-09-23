@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>ダーツ自動判定＆手直しシステム Ver 2.1</title>
+  <title>ダーツ自動判定＆手直しシステム Ver 2.2</title>
   <style>
     body { 
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
@@ -76,7 +76,7 @@
 </head>
 <body>
 
-  <h1>🎯 ダーツ自動判定 <span class="version-tag">Ver 2.1</span></h1>
+  <h1>🎯 ダーツ自動判定 <span class="version-tag">Ver 2.2</span></h1>
 
   <video id="video" autoplay playsinline></video>
   
@@ -203,7 +203,6 @@
     requestAnimationFrame(updateLoop);
   }
 
-  // --- 誤判定防止機能付きの差分検知 ---
   function detectDartHit() {
     procCtx.drawImage(video, 0, 0, procCanvas.width, procCanvas.height);
     const currentData = procCtx.getImageData(0, 0, procCanvas.width, procCanvas.height);
@@ -217,7 +216,6 @@
       const bDiff = Math.abs(currentData.data[i+2] - baseImageData.data[i+2]);
       const diff = rDiff + gDiff + bDiff;
 
-      // 輝度変化の閾値を調整 (135)
       if (diff > 135) {
         const pixelIdx = i / 4;
         const px = pixelIdx % procCanvas.width;
@@ -228,29 +226,24 @@
 
     const diffCount = changedPixels.length;
 
-    // 1. 画面全体が大きく変わった場合の処理（照明変化・手ブレ・人の横切り）
-    if (diffCount > totalPixels * 0.12) { // 画面の12%以上が一気に変化した場合
+    if (diffCount > totalPixels * 0.12) {
       statusMsg.innerText = "⚠️ 明るさ/位置のズレを検知。自動補正中...";
-      // 基準画像を現在の映像で自動再補正（基準撮影の自動やり直し）
       baseImageData = currentData;
       return;
     }
 
-    // 2. ダーツ特有の局所的な変化かどうかの判定（密集度チェック）
     if (diffCount >= 25 && diffCount <= totalPixels * 0.10) {
       let sumX = 0, sumY = 0;
       changedPixels.forEach(p => { sumX += p.x; sumY += p.y; });
       const avgPx = sumX / diffCount;
       const avgPy = sumY / diffCount;
 
-      // 重心からの平均距離（分散）を計算して、広範囲に散らばっているか確認
       let spreadRadius = 0;
       changedPixels.forEach(p => {
         spreadRadius += Math.hypot(p.x - avgPx, p.y - avgPy);
       });
       spreadRadius /= diffCount;
 
-      // 変化が1箇所に集中している場合（ダーツの刺さり）のみヒットと認定
       if (spreadRadius < 25) {
         const canvasX = (avgPx / procCanvas.width) * canvas.width;
         const canvasY = (avgPy / procCanvas.height) * canvas.height;
@@ -260,7 +253,7 @@
         throws[currentThrowIndex] = { label: score.text, pts: score.pts, x: canvasX, y: canvasY };
         lastHitTime = Date.now();
 
-        baseImageData = currentData; // 次の投のために基準画像を更新
+        baseImageData = currentData;
 
         currentThrowIndex++;
         if (currentThrowIndex >= 3) {
@@ -300,10 +293,12 @@
     document.getElementById('btn-confirm').disabled = (currentThrowIndex < 3 && !throws.some(t => t !== null));
   }
 
+  // --- 枠線・セグメント境界ガイド描画 ---
   function drawOverlayBoard() {
     ctx.strokeStyle = "rgba(0, 255, 204, 0.85)";
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 2.5;
 
+    // 1. 同心円（リング線）の描画
     ctx.beginPath(); ctx.arc(centerX, centerY, doubleOuterRadius, 0, Math.PI * 2); ctx.stroke();
     ctx.beginPath(); ctx.arc(centerX, centerY, doubleOuterRadius * 0.92, 0, Math.PI * 2); ctx.stroke();
     ctx.beginPath(); ctx.arc(centerX, centerY, doubleOuterRadius * 0.65, 0, Math.PI * 2); ctx.stroke();
@@ -311,17 +306,34 @@
     ctx.beginPath(); ctx.arc(centerX, centerY, doubleOuterRadius * 0.09, 0, Math.PI * 2); ctx.stroke();
     ctx.beginPath(); ctx.arc(centerX, centerY, doubleOuterRadius * 0.04, 0, Math.PI * 2); ctx.stroke();
 
+    // 2. 縦線（セグメントを区切る放射状の20分割線）と数字の描画
+    const innerBullRadius = doubleOuterRadius * 0.09;
+
     for (let i = 0; i < 20; i++) {
-      const angleRad = (i * 18 - 90) * Math.PI / 180;
+      // ナンバーテキストの位置角度（各セグメントの中央）
+      const textAngleRad = (i * 18 - 90) * Math.PI / 180;
       const textRadius = doubleOuterRadius * 1.12;
-      const x = centerX + textRadius * Math.cos(angleRad);
-      const y = centerY + textRadius * Math.sin(angleRad);
+      const tx = centerX + textRadius * Math.cos(textAngleRad);
+      const ty = centerY + textRadius * Math.sin(textAngleRad);
 
       ctx.fillStyle = "#00ffcc";
-      ctx.font = "bold 30px sans-serif";
+      ctx.font = "bold 28px sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(BOARD_NUMBERS[i], x, y);
+      ctx.fillText(BOARD_NUMBERS[i], tx, ty);
+
+      // セグメント同士を区切る縦線の角度（テキスト位置から9度ずらした境界線）
+      const lineAngleRad = (i * 18 - 90 - 9) * Math.PI / 180;
+      
+      const startX = centerX + innerBullRadius * Math.cos(lineAngleRad);
+      const startY = centerY + innerBullRadius * Math.sin(lineAngleRad);
+      const endX = centerX + doubleOuterRadius * Math.cos(lineAngleRad);
+      const endY = centerY + doubleOuterRadius * Math.sin(lineAngleRad);
+
+      ctx.beginPath();
+      ctx.moveTo(startX, startY);
+      ctx.lineTo(endX, endY);
+      ctx.stroke();
     }
   }
 
