@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>ダーツ自動判定＆手直しシステム Ver 2.2</title>
+  <title>ダーツ自動判定＆マルチゲームシステム Ver 3.0</title>
   <style>
     body { 
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
@@ -16,6 +16,28 @@
     }
     h1 { font-size: 1.2rem; margin: 5px 0; }
     .version-tag { font-size: 0.8rem; color: #00ffcc; margin-left: 5px; }
+    
+    /* 設定パネル */
+    .setup-panel {
+      background: #1e1e1e;
+      border: 1px solid #333;
+      border-radius: 12px;
+      padding: 12px;
+      max-width: 420px;
+      margin: 10px auto;
+    }
+    .setup-group { margin-bottom: 10px; text-align: left; }
+    .setup-group label { font-size: 0.85rem; color: #aaa; display: block; margin-bottom: 4px; }
+    select {
+      width: 100%;
+      padding: 8px;
+      background: #333;
+      color: #fff;
+      border: 1px solid #555;
+      border-radius: 6px;
+      font-size: 1rem;
+    }
+
     #board-container { position: relative; display: inline-block; margin: 5px auto; }
     video { display: none; }
     canvas { 
@@ -23,39 +45,65 @@
       border-radius: 50%; 
       box-shadow: 0 0 20px rgba(0, 0, 0, 0.8); 
       background: #000;
-      width: 340px;
-      height: 340px;
+      width: 320px;
+      height: 320px;
     }
     #status-msg { font-size: 1rem; color: #00ffcc; margin: 5px 0; font-weight: bold; min-height: 1.5rem; }
     
-    .throws-container {
+    /* プレイヤー＆スコア表示 */
+    .game-info {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      max-width: 420px;
+      margin: 5px auto;
+      background: #222;
+      padding: 8px 12px;
+      border-radius: 8px;
+    }
+    .player-turn { font-size: 1.1rem; font-weight: bold; color: #ff9800; }
+    .round-info { font-size: 0.9rem; color: #aaa; }
+
+    .scoreboard {
       display: flex;
       justify-content: center;
-      gap: 10px;
-      margin: 10px 0;
+      gap: 6px;
+      max-width: 420px;
+      margin: 8px auto;
     }
+    .p-card {
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 6px;
+      flex: 1;
+    }
+    .p-card.active { border-color: #ff9800; box-shadow: 0 0 8px rgba(255,152,0,0.5); }
+    .p-name { font-size: 0.75rem; color: #888; }
+    .p-score { font-size: 1.2rem; font-weight: bold; color: #fff; }
+
+    /* 3投表示 */
+    .throws-container { display: flex; justify-content: center; gap: 8px; margin: 8px 0; }
     .throw-box {
       background: #222;
       border: 1px solid #444;
       border-radius: 8px;
-      padding: 8px 12px;
-      min-width: 80px;
+      padding: 6px 10px;
+      min-width: 70px;
       cursor: pointer;
     }
     .throw-box.active { border-color: #00ffcc; box-shadow: 0 0 8px #00ffcc; }
-    .throw-label { font-size: 0.75rem; color: #888; }
-    .throw-score { font-size: 1.2rem; font-weight: bold; color: #fff; margin-top: 2px; }
-
-    .total-score { font-size: 1.5rem; color: #ff9800; font-weight: bold; margin: 5px 0; }
+    .throw-label { font-size: 0.7rem; color: #888; }
+    .throw-score { font-size: 1.1rem; font-weight: bold; color: #fff; }
 
     .controls { margin-bottom: 10px; display: flex; justify-content: center; gap: 8px; }
     .panel { background: #1e1e1e; padding: 10px; border-radius: 12px; max-width: 420px; margin: 5px auto; border: 1px solid #333; }
-    .panel-title { font-size: 0.9rem; color: #aaa; margin-bottom: 8px; }
+    .panel-title { font-size: 0.85rem; color: #aaa; margin-bottom: 6px; }
     .btn-group { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; }
     
     button { 
       padding: 10px 12px; 
-      font-size: 0.95rem; 
+      font-size: 0.9rem; 
       border: none; 
       border-radius: 6px; 
       background-color: #333; 
@@ -67,7 +115,7 @@
     }
     button:active { background-color: #555; }
     button.action-btn { background-color: #ff9800; font-weight: bold; color: #000; }
-    button.confirm-btn { background-color: #00cc88; font-weight: bold; color: #000; font-size: 1.1rem; padding: 12px; }
+    button.confirm-btn { background-color: #00cc88; font-weight: bold; color: #000; font-size: 1rem; padding: 10px; }
     button.multiplier { background-color: #005588; font-weight: bold;}
     button.active { background-color: #00cc88; box-shadow: 0 0 10px #00cc88; }
     button.special { background-color: #aa2222; }
@@ -76,58 +124,79 @@
 </head>
 <body>
 
-  <h1>🎯 ダーツ自動判定 <span class="version-tag">Ver 2.2</span></h1>
+  <h1>🎯 ダーツ自動判定 <span class="version-tag">Ver 3.0</span></h1>
 
   <video id="video" autoplay playsinline></video>
-  
-  <div class="controls">
-    <button class="action-btn" onclick="startCamera()">📷 1. カメラ起動</button>
-    <button class="action-btn" id="btn-base" onclick="captureBase()" disabled>🎯 2. 基準撮影(開始)</button>
+
+  <!-- 設定エリア -->
+  <div class="setup-panel" id="setup-panel">
+    <div class="setup-group">
+      <label>ゲームモード</label>
+      <select id="game-mode">
+        <option value="countup">Count-Up (8R)</option>
+        <option value="501">501 (8R Limit)</option>
+        <option value="cricket">Cricket (15R Limit)</option>
+      </select>
+    </div>
+    <div class="setup-group">
+      <label>プレイヤー人数</label>
+      <select id="player-count">
+        <option value="1">1 Player</option>
+        <option value="2">2 Players</option>
+        <option value="3">3 Players</option>
+        <option value="4">4 Players</option>
+      </select>
+    </div>
+    <button class="action-btn" style="width: 100%;" onclick="initGame()">🎮 ゲーム開始</button>
   </div>
 
-  <div id="board-container">
+  <div class="controls" id="cam-controls" style="display:none;">
+    <button class="action-btn" onclick="startCamera()">📷 1. カメラ起動</button>
+    <button class="action-btn" id="btn-base" onclick="captureBase()" disabled>🎯 2. 基準撮影(ラウンド開始)</button>
+  </div>
+
+  <div id="board-container" style="display:none;">
     <canvas id="dartboard" width="720" height="720"></canvas>
   </div>
 
-  <div id="status-msg">「1. カメラ起動」を押してください</div>
+  <div id="status-msg"></div>
 
-  <div class="throws-container">
-    <div class="throw-box" id="box-1">
-      <div class="throw-label">1投目</div>
-      <div class="throw-score" id="score-1">-</div>
-    </div>
-    <div class="throw-box" id="box-2">
-      <div class="throw-label">2投目</div>
-      <div class="throw-score" id="score-2">-</div>
-    </div>
-    <div class="throw-box" id="box-3">
-      <div class="throw-label">3投目</div>
-      <div class="throw-score" id="score-3">-</div>
-    </div>
-  </div>
-
-  <div class="total-score" id="total-display">合計: 0 点</div>
-
-  <div class="panel" id="action-panel">
-    <button class="confirm-btn" id="btn-confirm" onclick="confirmRound()" style="width: 100%; margin-bottom: 10px;" disabled>✅ 点数を確定して次のラウンドへ</button>
-
-    <div class="panel-title">🔧 スコアを手動修正 (枠をタップして選択)</div>
-    <div class="btn-group" style="margin-bottom: 8px;">
-      <button class="multiplier active" id="btn-S" onclick="setMultiplier('S')">Single</button>
-      <button class="multiplier" id="btn-D" onclick="setMultiplier('D')">Double</button>
-      <button class="multiplier" id="btn-T" onclick="setMultiplier('T')">Triple</button>
+  <!-- ゲーム情報表示 -->
+  <div id="game-ui" style="display:none;">
+    <div class="game-info">
+      <div class="player-turn" id="turn-display">P1 の番です</div>
+      <div class="round-info" id="round-display">Round 1 / 8</div>
     </div>
 
-    <div class="btn-group">
-      <script>
-        const nums = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5];
-        nums.forEach(i => {
-          document.write(`<button onclick="manualScore(${i})">${i}</button>`);
-        });
-      </script>
-      <button class="special" onclick="manualSpecial('S-BULL', 25)">S-BULL</button>
-      <button class="special" onclick="manualSpecial('D-BULL', 50)">D-BULL</button>
-      <button onclick="manualSpecial('OUT', 0)">OUT</button>
+    <div class="scoreboard" id="scoreboard"></div>
+
+    <div class="throws-container">
+      <div class="throw-box" id="box-1"><div class="throw-label">1投目</div><div class="throw-score" id="score-1">-</div></div>
+      <div class="throw-box" id="box-2"><div class="throw-label">2投目</div><div class="throw-score" id="score-2">-</div></div>
+      <div class="throw-box" id="box-3"><div class="throw-label">3投目</div><div class="throw-score" id="score-3">-</div></div>
+    </div>
+
+    <div class="panel" id="action-panel">
+      <button class="confirm-btn" id="btn-confirm" onclick="confirmRound()" style="width: 100%; margin-bottom: 10px;" disabled>✅ スコア確定 ＆ プレイヤー交代</button>
+
+      <div class="panel-title">🔧 手動修正 (枠をタップして選択)</div>
+      <div class="btn-group" style="margin-bottom: 8px;">
+        <button class="multiplier active" id="btn-S" onclick="setMultiplier('S')">Single</button>
+        <button class="multiplier" id="btn-D" onclick="setMultiplier('D')">Double</button>
+        <button class="multiplier" id="btn-T" onclick="setMultiplier('T')">Triple</button>
+      </div>
+
+      <div class="btn-group">
+        <script>
+          const nums = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5];
+          nums.forEach(i => {
+            document.write(`<button onclick="manualScore(${i})">${i}</button>`);
+          });
+        </script>
+        <button class="special" onclick="manualSpecial('S-BULL', 25, 25)">S-BULL</button>
+        <button class="special" onclick="manualSpecial('D-BULL', 50, 25)">D-BULL</button>
+        <button onclick="manualSpecial('OUT', 0, 0)">OUT</button>
+      </div>
     </div>
   </div>
 
@@ -143,18 +212,52 @@
   const BOARD_NUMBERS = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5];
 
   const procCanvas = document.createElement('canvas');
-  procCanvas.width = 180;
-  procCanvas.height = 180;
+  procCanvas.width = 180; procCanvas.height = 180;
   const procCtx = procCanvas.getContext('2d');
 
   let baseImageData = null;
   let currentMultiplier = 'S';
+  
+  // ゲーム管理変数
+  let gameMode = 'countup';
+  let playerCount = 1;
+  let currentRound = 1;
+  let maxRounds = 8;
+  let currentPlayerIdx = 0;
+  let players = [];
   
   let throws = [null, null, null];
   let currentThrowIndex = 0;
   let selectedSlotIndex = 0;
   let isDetecting = false;
   let lastHitTime = 0;
+
+  // ゲーム初期化
+  function initGame() {
+    gameMode = document.getElementById('game-mode').value;
+    playerCount = parseInt(document.getElementById('player-count').value);
+    
+    maxRounds = (gameMode === 'cricket') ? 15 : 8;
+    currentRound = 1;
+    currentPlayerIdx = 0;
+    
+    players = [];
+    for(let i=0; i<playerCount; i++) {
+      players.push({
+        name: `P${i+1}`,
+        score: (gameMode === '501') ? 501 : 0,
+        cricketState: {15:0, 16:0, 17:0, 18:0, 19:0, 20:0, 25:0} // クリケット用マーク数
+      });
+    }
+
+    document.getElementById('setup-panel').style.display = 'none';
+    document.getElementById('cam-controls').style.display = 'flex';
+    document.getElementById('board-container').style.display = 'inline-block';
+    document.getElementById('game-ui').style.display = 'block';
+
+    updateScoreboardUI();
+    statusMsg.innerText = "「1. カメラ起動」を押してください";
+  }
 
   async function startCamera() {
     statusMsg.innerText = "カメラ起動中...";
@@ -165,7 +268,7 @@
       video.srcObject = stream;
       await video.play();
       document.getElementById('btn-base').disabled = false;
-      statusMsg.innerText = "「2. 基準撮影」を押してください";
+      statusMsg.innerText = "「2. 基準撮影」を押してラウンドを開始してください";
       requestAnimationFrame(updateLoop);
     } catch (err) {
       alert("カメラエラー: " + err);
@@ -183,7 +286,7 @@
     updateUI();
     
     isDetecting = true;
-    statusMsg.innerText = "🎯 ダーツを投げてくだい (1投目)";
+    statusMsg.innerText = `🎯 ${players[currentPlayerIdx].name} の番です (1投目)`;
   }
 
   function updateLoop() {
@@ -211,23 +314,20 @@
     const totalPixels = procCanvas.width * procCanvas.height;
 
     for (let i = 0; i < currentData.data.length; i += 4) {
-      const rDiff = Math.abs(currentData.data[i] - baseImageData.data[i]);
-      const gDiff = Math.abs(currentData.data[i+1] - baseImageData.data[i+1]);
-      const bDiff = Math.abs(currentData.data[i+2] - baseImageData.data[i+2]);
-      const diff = rDiff + gDiff + bDiff;
+      const diff = Math.abs(currentData.data[i] - baseImageData.data[i]) +
+                   Math.abs(currentData.data[i+1] - baseImageData.data[i+1]) +
+                   Math.abs(currentData.data[i+2] - baseImageData.data[i+2]);
 
       if (diff > 135) {
         const pixelIdx = i / 4;
-        const px = pixelIdx % procCanvas.width;
-        const py = Math.floor(pixelIdx / procCanvas.width);
-        changedPixels.push({ x: px, y: py });
+        changedPixels.push({ x: pixelIdx % procCanvas.width, y: Math.floor(pixelIdx / procCanvas.width) });
       }
     }
 
     const diffCount = changedPixels.length;
 
     if (diffCount > totalPixels * 0.12) {
-      statusMsg.innerText = "⚠️ 明るさ/位置のズレを検知。自動補正中...";
+      statusMsg.innerText = "⚠️ 明るさ/位置ズレ検知。再補正中...";
       baseImageData = currentData;
       return;
     }
@@ -235,13 +335,10 @@
     if (diffCount >= 25 && diffCount <= totalPixels * 0.10) {
       let sumX = 0, sumY = 0;
       changedPixels.forEach(p => { sumX += p.x; sumY += p.y; });
-      const avgPx = sumX / diffCount;
-      const avgPy = sumY / diffCount;
+      const avgPx = sumX / diffCount, avgPy = sumY / diffCount;
 
       let spreadRadius = 0;
-      changedPixels.forEach(p => {
-        spreadRadius += Math.hypot(p.x - avgPx, p.y - avgPy);
-      });
+      changedPixels.forEach(p => { spreadRadius += Math.hypot(p.x - avgPx, p.y - avgPy); });
       spreadRadius /= diffCount;
 
       if (spreadRadius < 25) {
@@ -250,9 +347,8 @@
 
         const score = calculateScore(canvasX, canvasY);
         
-        throws[currentThrowIndex] = { label: score.text, pts: score.pts, x: canvasX, y: canvasY };
+        throws[currentThrowIndex] = { label: score.text, pts: score.pts, num: score.num, mult: score.mult, x: canvasX, y: canvasY };
         lastHitTime = Date.now();
-
         baseImageData = currentData;
 
         currentThrowIndex++;
@@ -260,7 +356,7 @@
           isDetecting = false;
           statusMsg.innerText = "3投完了！内容を確認して確定してください";
         } else {
-          statusMsg.innerText = `🎯 ダーツを投げてくだい (${currentThrowIndex + 1}投目)`;
+          statusMsg.innerText = `🎯 ${players[currentPlayerIdx].name} (${currentThrowIndex + 1}投目)`;
         }
 
         selectedSlotIndex = Math.min(currentThrowIndex, 2);
@@ -269,36 +365,102 @@
     }
   }
 
-  function updateUI() {
-    for (let i = 0; i < 3; i++) {
-      const box = document.getElementById(`box-${i+1}`);
-      const scoreText = document.getElementById(`score-${i+1}`);
-      
-      if (throws[i]) {
-        scoreText.innerText = throws[i].label;
-      } else {
-        scoreText.innerText = "-";
-      }
+  // スコア確定・プレイヤー切り替え
+  function confirmRound() {
+    let p = players[currentPlayerIdx];
 
-      if (i === selectedSlotIndex) {
-        box.classList.add('active');
+    // ゲームモードごとの点数反映
+    if (gameMode === 'countup') {
+      const roundTotal = throws.reduce((s, t) => s + (t ? t.pts : 0), 0);
+      p.score += roundTotal;
+    } 
+    else if (gameMode === '501') {
+      const roundTotal = throws.reduce((s, t) => s + (t ? t.pts : 0), 0);
+      if (p.score - roundTotal === 0) {
+        p.score = 0;
+        alert(`🎉 ${p.name} が 501 をあがりました！勝利！`);
+        location.reload();
+        return;
+      } else if (p.score - roundTotal < 0) {
+        alert(`⚠️ BUST! スコアは戻ります。`);
       } else {
-        box.classList.remove('active');
+        p.score -= roundTotal;
       }
+    } 
+    else if (gameMode === 'cricket') {
+      throws.forEach(t => {
+        if (!t || !t.num) return;
+        let num = t.num, mult = t.mult;
+        if ([15,16,17,18,19,20,25].includes(num)) {
+          let currentMarks = p.cricketState[num];
+          let needed = 3 - currentMarks;
+          if (needed > 0) {
+            let addMarks = Math.min(needed, mult);
+            p.cricketState[num] += addMarks;
+            let overflow = mult - addMarks;
+            // 他のプレイヤー全員がクローズしていないか確認して加点
+            let isClosedAll = players.every(pl => pl.cricketState[num] >= 3);
+            if (overflow > 0 && !isClosedAll) {
+              p.score += (num * overflow);
+            }
+          } else {
+            let isClosedAll = players.every(pl => pl.cricketState[num] >= 3);
+            if (!isClosedAll) p.score += (num * mult);
+          }
+        }
+      });
     }
 
-    const total = throws.reduce((sum, t) => sum + (t ? t.pts : 0), 0);
-    document.getElementById('total-display').innerText = `合計: ${total} 点`;
+    // プレイヤー＆ラウンド交代
+    currentPlayerIdx++;
+    if (currentPlayerIdx >= playerCount) {
+      currentPlayerIdx = 0;
+      currentRound++;
+    }
 
+    if (currentRound > maxRounds) {
+      alert("🏁 ゲーム終了！");
+      location.reload();
+      return;
+    }
+
+    updateScoreboardUI();
+    isDetecting = false;
+    statusMsg.innerText = `次は ${players[currentPlayerIdx].name} の番です。「2. 基準撮影」を押してください`;
+    document.getElementById('btn-confirm').disabled = true;
+  }
+
+  function updateScoreboardUI() {
+    document.getElementById('turn-display').innerText = `${players[currentPlayerIdx].name} の番です`;
+    document.getElementById('round-display').innerText = `Round ${currentRound} / ${maxRounds}`;
+
+    const sb = document.getElementById('scoreboard');
+    sb.innerHTML = '';
+    players.forEach((p, idx) => {
+      let activeClass = idx === currentPlayerIdx ? 'active' : '';
+      let scoreText = gameMode === 'cricket' ? `${p.score}点` : `${p.score}pt`;
+      sb.innerHTML += `
+        <div class="p-card ${activeClass}">
+          <div class="p-name">${p.name}</div>
+          <div class="p-score">${scoreText}</div>
+        </div>
+      `;
+    });
+  }
+
+  function updateUI() {
+    for (let i = 0; i < 3; i++) {
+      const scoreText = document.getElementById(`score-${i+1}`);
+      scoreText.innerText = throws[i] ? throws[i].label : "-";
+      document.getElementById(`box-${i+1}`).classList.toggle('active', i === selectedSlotIndex);
+    }
     document.getElementById('btn-confirm').disabled = (currentThrowIndex < 3 && !throws.some(t => t !== null));
   }
 
-  // --- 枠線・セグメント境界ガイド描画 ---
   function drawOverlayBoard() {
     ctx.strokeStyle = "rgba(0, 255, 204, 0.85)";
     ctx.lineWidth = 2.5;
 
-    // 1. 同心円（リング線）の描画
     ctx.beginPath(); ctx.arc(centerX, centerY, doubleOuterRadius, 0, Math.PI * 2); ctx.stroke();
     ctx.beginPath(); ctx.arc(centerX, centerY, doubleOuterRadius * 0.92, 0, Math.PI * 2); ctx.stroke();
     ctx.beginPath(); ctx.arc(centerX, centerY, doubleOuterRadius * 0.65, 0, Math.PI * 2); ctx.stroke();
@@ -306,33 +468,21 @@
     ctx.beginPath(); ctx.arc(centerX, centerY, doubleOuterRadius * 0.09, 0, Math.PI * 2); ctx.stroke();
     ctx.beginPath(); ctx.arc(centerX, centerY, doubleOuterRadius * 0.04, 0, Math.PI * 2); ctx.stroke();
 
-    // 2. 縦線（セグメントを区切る放射状の20分割線）と数字の描画
     const innerBullRadius = doubleOuterRadius * 0.09;
 
     for (let i = 0; i < 20; i++) {
-      // ナンバーテキストの位置角度（各セグメントの中央）
       const textAngleRad = (i * 18 - 90) * Math.PI / 180;
       const textRadius = doubleOuterRadius * 1.12;
-      const tx = centerX + textRadius * Math.cos(textAngleRad);
-      const ty = centerY + textRadius * Math.sin(textAngleRad);
-
       ctx.fillStyle = "#00ffcc";
-      ctx.font = "bold 28px sans-serif";
+      ctx.font = "bold 26px sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(BOARD_NUMBERS[i], tx, ty);
+      ctx.fillText(BOARD_NUMBERS[i], centerX + textRadius * Math.cos(textAngleRad), centerY + textRadius * Math.sin(textAngleRad));
 
-      // セグメント同士を区切る縦線の角度（テキスト位置から9度ずらした境界線）
       const lineAngleRad = (i * 18 - 90 - 9) * Math.PI / 180;
-      
-      const startX = centerX + innerBullRadius * Math.cos(lineAngleRad);
-      const startY = centerY + innerBullRadius * Math.sin(lineAngleRad);
-      const endX = centerX + doubleOuterRadius * Math.cos(lineAngleRad);
-      const endY = centerY + doubleOuterRadius * Math.sin(lineAngleRad);
-
       ctx.beginPath();
-      ctx.moveTo(startX, startY);
-      ctx.lineTo(endX, endY);
+      ctx.moveTo(centerX + innerBullRadius * Math.cos(lineAngleRad), centerY + innerBullRadius * Math.sin(lineAngleRad));
+      ctx.lineTo(centerX + doubleOuterRadius * Math.cos(lineAngleRad), centerY + doubleOuterRadius * Math.sin(lineAngleRad));
       ctx.stroke();
     }
   }
@@ -348,22 +498,20 @@
         
         ctx.fillStyle = "#fff";
         ctx.font = "bold 16px sans-serif";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
         ctx.fillText(idx + 1, t.x, t.y);
       }
     });
   }
 
   function calculateScore(x, y) {
-    const dx = x - centerX;
-    const dy = y - centerY;
+    const dx = x - centerX, dy = y - centerY;
     const distance = Math.hypot(dx, dy);
     const r = distance / doubleOuterRadius;
 
-    if (r <= 0.04) return { text: "D-BULL", pts: 50 };
-    if (r <= 0.09) return { text: "S-BULL", pts: 25 };
-    if (r > 1.0)  return { text: "OUT", pts: 0 };
+    if (r <= 0.04) return { text: "D-BULL", pts: 50, num: 25, mult: 2 };
+    if (r <= 0.09) return { text: "S-BULL", pts: 25, num: 25, mult: 1 };
+    if (r > 1.0)  return { text: "OUT", pts: 0, num: 0, mult: 0 };
 
     let angleRad = Math.atan2(dx, -dy);
     let angleDeg = (angleRad * 180 / Math.PI + 360) % 360;
@@ -371,9 +519,9 @@
     let index = Math.floor(adjustedAngle / 18);
     let num = BOARD_NUMBERS[index];
 
-    if (r >= 0.58 && r <= 0.65) return { text: `T${num}`, pts: num * 3 };
-    if (r >= 0.92 && r <= 1.0) return { text: `D${num}`, pts: num * 2 };
-    return { text: `S${num}`, pts: num };
+    if (r >= 0.58 && r <= 0.65) return { text: `T${num}`, pts: num * 3, num: num, mult: 3 };
+    if (r >= 0.92 && r <= 1.0) return { text: `D${num}`, pts: num * 2, num: num, mult: 2 };
+    return { text: `S${num}`, pts: num, num: num, mult: 1 };
   }
 
   document.getElementById('box-1').onclick = () => { selectedSlotIndex = 0; updateUI(); };
@@ -389,18 +537,13 @@
   function manualScore(num) {
     let multText = currentMultiplier === 'T' ? 'T' : (currentMultiplier === 'D' ? 'D' : 'S');
     let multVal = currentMultiplier === 'T' ? 3 : (currentMultiplier === 'D' ? 2 : 1);
-    throws[selectedSlotIndex] = { label: `${multText}${num}`, pts: num * multVal, x: null, y: null };
+    throws[selectedSlotIndex] = { label: `${multText}${num}`, pts: num * multVal, num: num, mult: multVal, x: null, y: null };
     updateUI();
   }
 
-  function manualSpecial(label, pts) {
-    throws[selectedSlotIndex] = { label: label, pts: pts, x: null, y: null };
+  function manualSpecial(label, pts, num) {
+    throws[selectedSlotIndex] = { label: label, pts: pts, num: num, mult: pts === 50 ? 2 : (pts === 25 ? 1 : 0), x: null, y: null };
     updateUI();
-  }
-
-  function confirmRound() {
-    alert(`【ラウンド確定】\n${document.getElementById('total-display').innerText}`);
-    captureBase();
   }
 
   drawOverlayBoard();
