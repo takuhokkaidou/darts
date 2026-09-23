@@ -8,9 +8,9 @@
     body { font-family: sans-serif; text-align: center; background-color: #121212; color: #fff; margin: 0; padding: 10px; }
     h1 { font-size: 1.2rem; margin: 5px 0; }
     #board-container { position: relative; display: inline-block; margin: 5px auto; touch-action: manipulation; }
-    video { display: none; } /* カメラ映像用（非表示） */
+    video { display: none; }
     canvas { display: block; border-radius: 50%; box-shadow: 0 0 15px rgba(0,0,0,0.5); cursor: pointer; background: #000; }
-    #score-display { font-size: 2rem; font-weight: bold; color: #00ffcc; margin: 8px 0; min-height: 2.4rem; background: rgba(0,0,0,0.4); padding: 5px; border-radius: 4px;}
+    #score-display { font-size: 1.8rem; font-weight: bold; color: #00ffcc; margin: 8px 0; min-height: 2.4rem; background: rgba(0,0,0,0.4); padding: 5px; border-radius: 4px;}
     .controls { margin-bottom: 10px; }
     .panel { background: #1e1e1e; padding: 10px; border-radius: 8px; max-width: 420px; margin: 5px auto; border: 1px solid #333; }
     .panel-title { font-size: 0.9rem; color: #aaa; margin-bottom: 8px; }
@@ -27,19 +27,17 @@
 
   <h1>🎯 ダーツ自動判定＆手直し</h1>
 
-  <!-- 非表示のビデオタグ -->
   <video id="video" autoplay playsinline></video>
   
   <div class="controls">
     <button class="action-btn" onclick="startCamera()">📷 カメラ起動</button>
-    <button class="action-btn" onclick="setBaseFrame()">📸 基準（刺さる前）撮影</button>
   </div>
 
   <div id="board-container">
-    <canvas id="dartboard" width="380" height="380"></canvas>
+    <canvas id="dartboard" width="360" height="360"></canvas>
   </div>
 
-  <div id="score-display">カメラを起動してください</div>
+  <div id="score-display">「カメラ起動」を押してください</div>
 
   <div class="panel">
     <div class="panel-title">🔧 手動で修正・入力</div>
@@ -72,30 +70,37 @@
   const centerX = canvas.width / 2;
   const centerY = canvas.height / 2;
   const doubleOuterRadius = Math.min(centerX, centerY) * 0.78;
-  const boardRadius = Math.min(centerX, centerY) * 0.98;
 
   const BOARD_NUMBERS = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5];
   
   let currentMultiplier = 'S';
   let lastClick = null;
-  let baseFrameData = null; // ダーツが刺さる前の画像データ
 
-  // --- カメラ起動 ---
+  // --- カメラ起動（エラー対策強化版） ---
   async function startCamera() {
+    scoreDisplay.innerText = "カメラ起動中...";
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment", width: { ideal: 640 }, height: { ideal: 640 } }
-      });
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { exact: "environment" } }
+        });
+      } catch (e) {
+        // 背面カメラの指定で失敗したら通常の指定で試す
+        stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      }
+      
       video.srcObject = stream;
-      video.play();
-      scoreDisplay.innerText = "基準フレームを撮影してください";
+      await video.play();
+      scoreDisplay.innerText = "タップで判定 / 手動修正可能";
       requestAnimationFrame(updateLoop);
     } catch (err) {
-      alert("カメラの起動に失敗しました: " + err);
+      alert("カメラの起動に失敗しました。アクセス権限を確認してください:\n" + err);
+      scoreDisplay.innerText = "カメラエラー";
     }
   }
 
-  // --- メインループ（カメラ描画 + ダーツガイド描画） ---
+  // メイン描画ループ
   function updateLoop() {
     if (video.readyState === video.HAVE_ENOUGH_DATA) {
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
@@ -112,29 +117,25 @@
     requestAnimationFrame(updateLoop);
   }
 
-  // --- 透過ガイドラインの描画 ---
+  // ボードのガイドライン描画
   function drawOverlayBoard() {
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.4)";
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = "rgba(0, 255, 204, 0.8)";
+    ctx.lineWidth = 1.5;
 
-    // ダブル＆トリプルリングガイド
     ctx.beginPath(); ctx.arc(centerX, centerY, doubleOuterRadius, 0, Math.PI * 2); ctx.stroke();
     ctx.beginPath(); ctx.arc(centerX, centerY, doubleOuterRadius * 0.92, 0, Math.PI * 2); ctx.stroke();
     ctx.beginPath(); ctx.arc(centerX, centerY, doubleOuterRadius * 0.65, 0, Math.PI * 2); ctx.stroke();
     ctx.beginPath(); ctx.arc(centerX, centerY, doubleOuterRadius * 0.58, 0, Math.PI * 2); ctx.stroke();
-
-    // ブルガイド
     ctx.beginPath(); ctx.arc(centerX, centerY, doubleOuterRadius * 0.09, 0, Math.PI * 2); ctx.stroke();
     ctx.beginPath(); ctx.arc(centerX, centerY, doubleOuterRadius * 0.04, 0, Math.PI * 2); ctx.stroke();
 
-    // ナンバーガイド枠外文字
     for (let i = 0; i < 20; i++) {
       const angleRad = (i * 18 - 90) * Math.PI / 180;
       const textRadius = doubleOuterRadius * 1.12;
       const x = centerX + textRadius * Math.cos(angleRad);
       const y = centerY + textRadius * Math.sin(angleRad);
 
-      ctx.fillStyle = "rgba(0, 255, 204, 0.9)";
+      ctx.fillStyle = "#00ffcc";
       ctx.font = "bold 15px sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
@@ -142,20 +143,7 @@
     }
   }
 
-  // --- 基準（刺さる前）画像の保存 ---
-  function setBaseFrame() {
-    baseFrameData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    scoreDisplay.innerText = "準備完了！ダーツを投げてください";
-  }
-
-  // --- 簡易画像差分（タップ時または自動検出時） ---
-  function detectDart(x, y) {
-    lastClick = {x, y};
-    const result = calculateScore(x, y);
-    scoreDisplay.innerText = `${result.text} (${result.pts}点)`;
-  }
-
-  // 点数計算
+  // スコア計算
   function calculateScore(x, y) {
     const dx = x - centerX;
     const dy = y - centerY;
@@ -181,15 +169,15 @@
     }
   }
 
-  // タップイベント
   canvas.addEventListener('click', (e) => {
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    detectDart(x, y);
+    lastClick = {x, y};
+    const result = calculateScore(x, y);
+    scoreDisplay.innerText = `${result.text} (${result.pts}点)`;
   });
 
-  // 手動修正処理
   function setMultiplier(type) {
     currentMultiplier = type;
     document.querySelectorAll('.multiplier').forEach(btn => btn.classList.remove('active'));
@@ -206,6 +194,9 @@
   function manualSpecial(label, pts) {
     scoreDisplay.innerText = `[修正] ${label} (${pts}点)`;
   }
+
+  // 初回表示用
+  drawOverlayBoard();
 </script>
 
 </body>
