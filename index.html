@@ -3,30 +3,77 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>ダーツ自動色判定プロトタイプ</title>
+  <title>ダーツ自動判定 Ver 8.0 (色検知統合版)</title>
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
   <style>
-    body { font-family: sans-serif; text-align: center; background: #121212; color: #fff; margin: 0; padding: 10px; }
-    #board-container { position: relative; display: inline-block; }
-    canvas { border-radius: 12px; background: #000; width: 340px; height: 340px; }
-    button { padding: 10px 16px; font-size: 0.9rem; border: none; border-radius: 6px; background: #00ffcc; color: #000; font-weight: bold; cursor: pointer; margin: 5px; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; text-align: center; background-color: #121212; color: #fff; margin: 0; padding: 10px; touch-action: manipulation; }
+    h1 { font-size: 1.2rem; margin: 5px 0; }
+    .version-tag { font-size: 0.8rem; color: #00ffcc; }
+    .setup-panel { background: #1e1e1e; border: 1px solid #333; border-radius: 12px; padding: 12px; max-width: 420px; margin: 10px auto; }
+    .setup-group { margin-bottom: 10px; text-align: left; }
+    .setup-group label { font-size: 0.85rem; color: #aaa; display: block; margin-bottom: 4px; }
+    select, input[type="text"] { width: 100%; padding: 8px; background: #333; color: #fff; border: 1px solid #555; border-radius: 6px; font-size: 1rem; box-sizing: border-box; }
+    
+    #board-container { position: relative; display: inline-block; margin: 5px auto; }
     video { display: none; }
+    canvas { display: block; border-radius: 12px; box-shadow: 0 0 20px rgba(0,0,0,0.8); background: #000; width: 340px; height: 340px; cursor: crosshair; }
+    #status-msg { font-size: 0.95rem; color: #00ffcc; margin: 8px 0; font-weight: bold; min-height: 1.5rem; line-height: 1.3; }
+    
+    .guide-box { background: #181818; border: 1px solid #00ffcc; border-radius: 8px; padding: 10px; max-width: 420px; margin: 10px auto; font-size: 0.85rem; text-align: left; }
+    
+    .game-info { display: flex; justify-content: space-between; align-items: center; max-width: 420px; margin: 5px auto; background: #222; padding: 8px 12px; border-radius: 8px; }
+    .player-turn { font-size: 1.1rem; font-weight: bold; color: #ff9800; }
+    .throws-container { display: flex; justify-content: center; gap: 8px; margin: 8px 0; }
+    .throw-box { background: #222; border: 1px solid #444; border-radius: 8px; padding: 6px 10px; min-width: 70px; }
+    
+    button { padding: 10px 12px; font-size: 0.9rem; border: none; border-radius: 6px; background-color: #333; color: #fff; cursor: pointer; flex-grow: 1; margin: 2px; }
+    button.action-btn { background-color: #ff9800; font-weight: bold; color: #000; }
+    button.color-btn { background-color: #00ffcc; font-weight: bold; color: #000; }
+    button.confirm-btn { background-color: #00cc88; font-weight: bold; color: #000; font-size: 1rem; padding: 10px; }
   </style>
 </head>
 <body>
 
-  <h1>🎨 色判定（赤・青検出）ダーツボード枠あわせ</h1>
+  <h1>🎯 ダーツ自動判定 <span class="version-tag">Ver 8.0</span></h1>
   <video id="video" autoplay playsinline></video>
 
-  <div>
-    <button onclick="startCamera()">📷 1. カメラ起動</button>
-    <button onclick="autoDetectColorBoard()">🎨 2. 色から枠を自動検出</button>
+  <div class="setup-panel" id="setup-panel">
+    <div class="setup-group">
+      <label>端末役割</label>
+      <select id="device-role">
+        <option value="single">1台でプレイ (カメラ＋表示)</option>
+      </select>
+    </div>
+    <button class="action-btn" style="width: 100%;" onclick="startApp()">🎮 スタート</button>
   </div>
 
-  <div id="board-container">
+  <div class="controls" id="cam-controls" style="display:none; flex-wrap: wrap;">
+    <button class="action-btn" onclick="startCamera()">📷 1. カメラ起動</button>
+    <button class="color-btn" id="btn-auto-color" onclick="autoDetectColorBoard()" disabled>🎨 色で枠を自動検出</button>
+    <button class="action-btn" id="btn-base" onclick="captureBase()" disabled>🎯 2. 基準撮影(判定開始)</button>
+  </div>
+
+  <div id="board-container" style="display:none;">
     <canvas id="dartboard" width="720" height="720"></canvas>
   </div>
 
-  <div id="status-msg" style="color: #00ffcc; margin-top: 10px;"></div>
+  <div id="status-msg"></div>
+
+  <div class="guide-box" id="guide-box" style="display:none;">
+    📌 <b>操作手順:</b><br>
+    1. 「📷 1. カメラ起動」を押す<br>
+    2. 「🎨 色で枠を自動検出」を押して枠を全自動で合わせる（手動で緑の点を動かして微調整も可能）<br>
+    3. 「🎯 2. 基準撮影」を押すと投げ判定がスタートします！
+  </div>
+
+  <div id="game-ui" style="display:none;">
+    <div class="throws-container">
+      <div class="throw-box">1投目: <span id="score-1">-</span></div>
+      <div class="throw-box">2投目: <span id="score-2">-</span></div>
+      <div class="throw-box">3投目: <span id="score-3">-</span></div>
+    </div>
+    <button class="confirm-btn" id="btn-confirm" onclick="confirmRound()" style="width: 100%; margin-top: 10px;" disabled>✅ 次のラウンドへ (基準再撮影)</button>
+  </div>
 
 <script>
   const video = document.getElementById('video');
@@ -34,87 +81,111 @@
   const ctx = canvas.getContext('2d');
   const statusMsg = document.getElementById('status-msg');
 
-  let points = [ { x: 360, y: 80 }, { x: 640, y: 360 }, { x: 360, y: 640 }, { x: 80, y: 360 } ];
+  // 補正用の4点座標（初期位置：20の上, 6の右, 3の下, 11の左）
+  let points = [
+    { x: 360, y: 80 },  // 上 (20)
+    { x: 640, y: 360 }, // 右 (6)
+    { x: 360, y: 640 }, // 下 (3)
+    { x: 80,  y: 360 }  // 左 (11)
+  ];
+  let draggingIdx = -1;
+
+  const BOARD_NUMBERS = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5];
+  const procCanvas = document.createElement('canvas');
+  procCanvas.width = 180; procCanvas.height = 180;
+  const procCtx = procCanvas.getContext('2d');
+
+  let baseImageData = null;
+  let isDetecting = false;
+  let throws = [null, null, null];
+  let currentThrowIndex = 0;
+  let lastHitTime = 0;
+
+  // タッチ・マウス操作イベント
+  canvas.addEventListener('mousedown', handlePointerDown);
+  canvas.addEventListener('mousemove', handlePointerMove);
+  window.addEventListener('mouseup', () => draggingIdx = -1);
+  
+  canvas.addEventListener('touchstart', (e) => { handlePointerDown(e.touches[0]); e.preventDefault(); });
+  canvas.addEventListener('touchmove', (e) => { handlePointerMove(e.touches[0]); e.preventDefault(); });
+  window.addEventListener('touchend', () => draggingIdx = -1);
+
+  function handlePointerDown(e) {
+    const rect = canvas.getBoundingClientRect();
+    const scale = canvas.width / rect.width;
+    const x = (e.clientX - rect.left) * scale;
+    const y = (e.clientY - rect.top) * scale;
+
+    points.forEach((p, idx) => {
+      if (Math.hypot(p.x - x, p.y - y) < 45) draggingIdx = idx;
+    });
+  }
+
+  function handlePointerMove(e) {
+    if (draggingIdx !== -1) {
+      const rect = canvas.getBoundingClientRect();
+      const scale = canvas.width / rect.width;
+      points[draggingIdx].x = (e.clientX - rect.left) * scale;
+      points[draggingIdx].y = (e.clientY - rect.top) * scale;
+    }
+  }
 
   async function startCamera() {
+    statusMsg.innerText = "カメラ起動中...";
     try {
       let stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 1280 } }
       });
       video.srcObject = stream;
       await video.play();
-      statusMsg.innerText = "カメラが起動しました。ボード全体を写して「色から枠を自動検出」を押してください。";
+      document.getElementById('btn-auto-color').disabled = false;
+      document.getElementById('btn-base').disabled = false;
+      document.getElementById('guide-box').style.display = 'block';
+      statusMsg.innerText = "「色で枠を自動検出」を押すか、緑の点を手動で合わせてください。";
       requestAnimationFrame(updateLoop);
     } catch (err) { alert("カメラエラー: " + err); }
   }
 
-  function updateLoop() {
-    if (video.readyState === video.HAVE_ENOUGH_DATA) {
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      drawOverlay();
-    }
-    requestAnimationFrame(updateLoop);
-  }
-
-  // RGBをHSV色空間に変換するヘルパー関数
-  function rgbToHsv(r, g, b) {
-    r /= 255; g /= 255; b /= 255;
-    let max = Math.max(r, g, b), min = Math.min(r, g, b);
-    let h, s, v = max;
-    let d = max - min;
-    s = max === 0 ? 0 : d / max;
-    if (max === min) {
-      h = 0;
-    } else {
-      switch (max) {
-        case r: h = (g - b) / d + (g < b ? 6 : 0); break;
-        case g: h = (b - r) / d + 2; break;
-        case b: h = (r - g) / d + 4; break;
-      }
-      h /= 6;
-    }
-    return [h * 360, s * 100, v * 100];
-  }
-
-  // 色判定ロジック（赤と青の領域を検索）
+  // 色自動解析（赤・青・緑ピクセルの最外郭から4点を配置）
   function autoDetectColorBoard() {
-    statusMsg.innerText = "ボードの色（赤・青）を解析中...";
-
+    statusMsg.innerText = "色（赤・青）を解析中...";
     const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const data = imgData.data;
 
-    let redPixels = [];
-    let bluePixels = [];
+    let targetPixels = [];
 
-    // ピクセルをスキャン（計算軽量化のため4ピクセル飛ばし）
     for (let y = 0; y < canvas.height; y += 4) {
       for (let x = 0; x < canvas.width; x += 4) {
         let i = (y * canvas.width + x) * 4;
         let r = data[i], g = data[i+1], b = data[i+2];
 
-        let [h, s, v] = rgbToHsv(r, g, b);
+        // HSV変換
+        let rN = r/255, gN = g/255, bN = b/255;
+        let max = Math.max(rN, gN, bN), min = Math.min(rN, gN, bN);
+        let h = 0, s = max === 0 ? 0 : (max - min) / max, v = max;
 
-        // 赤色の判定 (Hue: 340-360 または 0-15, Saturation > 40%, Value > 30%)
-        if ((h > 340 || h < 15) && s > 40 && v > 30) {
-          redPixels.push({ x, y });
+        if (max !== min) {
+          let d = max - min;
+          if (max === rN) h = (gN - bN) / d + (gN < bN ? 6 : 0);
+          else if (max === gN) h = (bN - rN) / d + 2;
+          else if (max === bN) h = (rN - gN) / d + 4;
+          h *= 60;
         }
-        // 青/緑系（ハードボードのグリーン含む）の判定 (Hue: 170-250)
-        else if (h >= 160 && h <= 250 && s > 35 && v > 25) {
-          bluePixels.push({ x, y });
+
+        // 赤色または青/緑色の範囲を抽出
+        if (((h > 330 || h < 20) && s > 0.35 && v > 0.25) || (h >= 150 && h <= 240 && s > 0.30 && v > 0.20)) {
+          targetPixels.push({ x, y });
         }
       }
     }
 
-    const allBoardPixels = [...redPixels, ...bluePixels];
-
-    if (allBoardPixels.length < 100) {
-      statusMsg.innerText = "❌ ボードの色（赤・青）を十分に検出できませんでした。照明を明るくするか近づけてください。";
+    if (targetPixels.length < 80) {
+      statusMsg.innerText = "❌ ボードの色を検出できませんでした。手動で緑の点を合わせてください。";
       return;
     }
 
-    // 検出した色の最外郭（上下左右の端）を検出
     let minX = canvas.width, maxX = 0, minY = canvas.height, maxY = 0;
-    allBoardPixels.forEach(p => {
+    targetPixels.forEach(p => {
       if (p.x < minX) minX = p.x;
       if (p.x > maxX) maxX = p.x;
       if (p.y < minY) minY = p.y;
@@ -124,20 +195,153 @@
     const centerX = (minX + maxX) / 2;
     const centerY = (minY + maxY) / 2;
 
-    // 検出した外郭を4点座標にセット
     points = [
-      { x: centerX, y: minY }, // 上
-      { x: maxX,    y: centerY }, // 右
-      { x: centerX, y: maxY }, // 下
-      { x: minX,    y: centerY }  // 左
+      { x: centerX, y: minY },
+      { x: maxX,    y: centerY },
+      { x: centerX, y: maxY },
+      { x: minX,    y: centerY }
     ];
 
-    statusMsg.innerText = "✅ 色検知成功！検出した枠に合わせて調整しました。";
+    statusMsg.innerText = "✅ 自動枠合わせ完了！ずれていれば緑の点をドラッグして微調整してください。";
   }
 
-  function drawOverlay() {
-    ctx.strokeStyle = "#00ffcc";
-    ctx.lineWidth = 3;
+  function captureBase() {
+    procCtx.drawImage(video, 0, 0, procCanvas.width, procCanvas.height);
+    baseImageData = procCtx.getImageData(0, 0, procCanvas.width, procCanvas.height);
+    throws = [null, null, null]; currentThrowIndex = 0;
+    isDetecting = true;
+    updateUI();
+    statusMsg.innerText = "🎯 判定中... (1投目を投げてください)";
+  }
+
+  function updateLoop() {
+    if (video.readyState === video.HAVE_ENOUGH_DATA) {
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      
+      if (isDetecting && baseImageData && currentThrowIndex < 3) {
+        const now = Date.now();
+        if (now - lastHitTime > 2500) {
+          detectDartHit();
+        }
+      }
+
+      drawDeformedBoard();
+      drawHitPoints();
+    }
+    requestAnimationFrame(updateLoop);
+  }
+
+  function detectDartHit() {
+    procCtx.drawImage(video, 0, 0, procCanvas.width, procCanvas.height);
+    const currentData = procCtx.getImageData(0, 0, procCanvas.width, procCanvas.height);
+
+    let changedPixels = [];
+    const totalPixels = procCanvas.width * procCanvas.height;
+
+    for (let i = 0; i < currentData.data.length; i += 4) {
+      const diff = Math.abs(currentData.data[i] - baseImageData.data[i]) +
+                   Math.abs(currentData.data[i+1] - baseImageData.data[i+1]) +
+                   Math.abs(currentData.data[i+2] - baseImageData.data[i+2]);
+
+      if (diff > 130) {
+        const pixelIdx = i / 4;
+        changedPixels.push({ x: pixelIdx % procCanvas.width, y: Math.floor(pixelIdx / procCanvas.width) });
+      }
+    }
+
+    const diffCount = changedPixels.length;
+
+    if (diffCount > totalPixels * 0.12) {
+      statusMsg.innerText = "⚠️ 大きな動きを検知。静止待機中...";
+      baseImageData = currentData;
+      return;
+    }
+
+    if (diffCount >= 12 && diffCount <= totalPixels * 0.10) {
+      const centerX = (points[0].x + points[1].x + points[2].x + points[3].x) / 4;
+      const centerY = (points[0].y + points[1].y + points[2].y + points[3].y) / 4;
+      const normCenterX = (centerX / canvas.width) * procCanvas.width;
+      const normCenterY = (centerY / canvas.height) * procCanvas.height;
+
+      let minDistanceToCenter = Infinity;
+      let tipPx = null;
+
+      changedPixels.forEach(p => {
+        const dist = Math.hypot(p.x - normCenterX, p.y - normCenterY);
+        if (dist < minDistanceToCenter) {
+          minDistanceToCenter = dist;
+          tipPx = p;
+        }
+      });
+
+      if (tipPx) {
+        const canvasX = (tipPx.x / procCanvas.width) * canvas.width;
+        const canvasY = (tipPx.y / procCanvas.height) * canvas.height;
+
+        const score = calculateScore4Point(canvasX, canvasY);
+        
+        throws[currentThrowIndex] = { label: score.text, pts: score.pts, x: canvasX, y: canvasY };
+        lastHitTime = Date.now();
+        baseImageData = currentData;
+
+        currentThrowIndex++;
+        if (currentThrowIndex >= 3) {
+          isDetecting = false;
+          statusMsg.innerText = "3投完了！「次のラウンドへ」を押してください";
+        } else {
+          statusMsg.innerText = `🎯 (${currentThrowIndex + 1}投目判定中...)`;
+        }
+
+        updateUI();
+      }
+    }
+  }
+
+  function calculateScore4Point(x, y) {
+    const centerX = (points[0].x + points[1].x + points[2].x + points[3].x) / 4;
+    const centerY = (points[0].y + points[1].y + points[2].y + points[3].y) / 4;
+
+    const avgRadius = (
+      Math.hypot(points[0].x - centerX, points[0].y - centerY) +
+      Math.hypot(points[1].x - centerX, points[1].y - centerY) +
+      Math.hypot(points[2].x - centerX, points[2].y - centerY) +
+      Math.hypot(points[3].x - centerX, points[3].y - centerY)
+    ) / 4;
+
+    const dx = x - centerX;
+    const dy = y - centerY;
+    const dist = Math.hypot(dx, dy);
+    const r = dist / avgRadius;
+
+    if (r <= 0.04) return { text: "D-BULL", pts: 50 };
+    if (r <= 0.09) return { text: "S-BULL", pts: 25 };
+    if (r > 1.05)  return { text: "OUT", pts: 0 };
+
+    let angleRad = Math.atan2(dx, -dy);
+    let angleDeg = (angleRad * 180 / Math.PI + 360) % 360;
+    let adjustedAngle = (angleDeg + 9) % 360;
+    let index = Math.floor(adjustedAngle / 18);
+    let num = BOARD_NUMBERS[index];
+
+    if (r >= 0.58 && r <= 0.65) return { text: `T${num}`, pts: num * 3 };
+    if (r >= 0.92 && r <= 1.0) return { text: `D${num}`, pts: num * 2 };
+    return { text: `S${num}`, pts: num };
+  }
+
+  function updateUI() {
+    for (let i = 0; i < 3; i++) {
+      const scoreText = document.getElementById(`score-${i+1}`);
+      if (scoreText) scoreText.innerText = throws[i] ? throws[i].label : "-";
+    }
+    const btnConfirm = document.getElementById('btn-confirm');
+    if (btnConfirm) btnConfirm.disabled = (currentThrowIndex === 0 && !throws.some(t => t !== null));
+  }
+
+  function drawDeformedBoard() {
+    ctx.strokeStyle = "rgba(0, 255, 204, 0.8)";
+    ctx.lineWidth = 2;
+
+    // 外枠を描画
     ctx.beginPath();
     ctx.moveTo(points[0].x, points[0].y);
     ctx.lineTo(points[1].x, points[1].y);
@@ -146,12 +350,42 @@
     ctx.closePath();
     ctx.stroke();
 
-    points.forEach(p => {
-      ctx.fillStyle = "#ff0055";
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
-      ctx.fill();
+    // 制御点
+    points.forEach((p, idx) => {
+      ctx.fillStyle = draggingIdx === idx ? "#ff0055" : "#00ffcc";
+      ctx.beginPath(); ctx.arc(p.x, p.y, 12, 0, Math.PI * 2); ctx.fill();
     });
+  }
+
+  function drawHitPoints() {
+    throws.forEach((t, idx) => {
+      if (t && t.x && t.y) {
+        ctx.beginPath();
+        ctx.arc(t.x, t.y, 14, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(255, 0, 85, 1.0)";
+        ctx.fill();
+        ctx.strokeStyle = "#fff"; ctx.lineWidth = 3; ctx.stroke();
+        
+        ctx.fillStyle = "#fff";
+        ctx.font = "bold 16px sans-serif";
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillText(idx + 1, t.x, t.y);
+      }
+    });
+  }
+
+  function confirmRound() {
+    throws = [null, null, null];
+    currentThrowIndex = 0;
+    updateUI();
+    captureBase();
+  }
+
+  function startApp() {
+    document.getElementById('setup-panel').style.display = 'none';
+    document.getElementById('cam-controls').style.display = 'flex';
+    document.getElementById('board-container').style.display = 'inline-block';
+    document.getElementById('game-ui').style.display = 'block';
   }
 </script>
 </body>
