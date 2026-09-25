@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>ダーツ自動判定＆オンライン同期 Ver 5.0</title>
+  <title>ダーツ自動判定＆オンライン同期 Ver 6.0</title>
   <!-- WebRTCライブラリ (PeerJS) -->
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
   <style>
@@ -40,7 +40,7 @@
       box-sizing: border-box;
     }
 
-    /* カメラ調整用コントロール */
+    /* カメラ歪み・位置調整パネル */
     .calib-panel {
       background: #181818;
       border: 1px solid #00ffcc;
@@ -51,8 +51,8 @@
       text-align: left;
     }
     .calib-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
-    .calib-row label { font-size: 0.75rem; color: #00ffcc; width: 30%; }
-    .calib-row input { width: 65%; }
+    .calib-row label { font-size: 0.75rem; color: #00ffcc; width: 35%; }
+    .calib-row input { width: 60%; }
 
     #board-container { position: relative; display: inline-block; margin: 5px auto; }
     video { display: none; }
@@ -168,7 +168,7 @@
 </head>
 <body>
 
-  <h1>🎯 ダーツ自動判定 <span class="version-tag">Ver 5.0</span></h1>
+  <h1>🎯 ダーツ自動判定 <span class="version-tag">Ver 6.0</span></h1>
 
   <video id="video" autoplay playsinline></video>
 
@@ -219,9 +219,9 @@
     <canvas id="dartboard" width="720" height="720"></canvas>
   </div>
 
-  <!-- 位置・サイズ位置調整コントロール -->
+  <!-- 斜め撮影（楕円）補正コントロール -->
   <div class="calib-panel" id="calib-panel" style="display:none;">
-    <div style="font-weight: bold; color: #00ffcc; font-size: 0.85rem; margin-bottom: 8px;">⚙️ カメラ枠の調整（斜め設置対応）</div>
+    <div style="font-weight: bold; color: #00ffcc; font-size: 0.85rem; margin-bottom: 8px;">⚙️ 枠の位置と楕円補正（斜め撮影対応）</div>
     <div class="calib-row">
       <label>横位置 (X):</label>
       <input type="range" id="calib-x" min="100" max="620" value="360" oninput="updateCalibParams()">
@@ -231,12 +231,16 @@
       <input type="range" id="calib-y" min="100" max="620" value="360" oninput="updateCalibParams()">
     </div>
     <div class="calib-row">
-      <label>大きさ (Radius):</label>
+      <label>全体サイズ:</label>
       <input type="range" id="calib-r" min="150" max="350" value="280" oninput="updateCalibParams()">
     </div>
     <div class="calib-row">
-      <label>回転角度:</label>
-      <input type="range" id="calib-angle" min="-180" max="180" value="0" oninput="updateCalibParams()">
+      <label>縦のつぶれ(上下傾き):</label>
+      <input type="range" id="calib-scale-y" min="50" max="150" value="100" oninput="updateCalibParams()">
+    </div>
+    <div class="calib-row">
+      <label>横のつぶれ(左右傾き):</label>
+      <input type="range" id="calib-scale-x" min="50" max="150" value="100" oninput="updateCalibParams()">
     </div>
   </div>
 
@@ -290,11 +294,12 @@
   const ctx = canvas.getContext('2d');
   const statusMsg = document.getElementById('status-msg');
   
-  // カメラ調整パラメータ
+  // カメラ位置・楕円補正パラメータ
   let boardCenterX = 360;
   let boardCenterY = 360;
-  let doubleOuterRadius = 280;
-  let boardRotateAngle = 0; // 度単位
+  let baseRadius = 280;
+  let scaleY = 1.0; // 縦方向の歪み率
+  let scaleX = 1.0; // 横方向の歪み率
 
   const BOARD_NUMBERS = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5];
 
@@ -325,8 +330,9 @@
   function updateCalibParams() {
     boardCenterX = parseFloat(document.getElementById('calib-x').value);
     boardCenterY = parseFloat(document.getElementById('calib-y').value);
-    doubleOuterRadius = parseFloat(document.getElementById('calib-r').value);
-    boardRotateAngle = parseFloat(document.getElementById('calib-angle').value);
+    baseRadius = parseFloat(document.getElementById('calib-r').value);
+    scaleY = parseFloat(document.getElementById('calib-scale-y').value) / 100.0;
+    scaleX = parseFloat(document.getElementById('calib-scale-x').value) / 100.0;
   }
 
   function toggleRoleUI() {
@@ -486,7 +492,7 @@
       
       if (isDetecting && baseImageData && currentThrowIndex < 3) {
         const now = Date.now();
-        // 判定インターバルを 3.5秒に延長して連続判定を防ぐ
+        // 判定インターバルを 3.5秒に設定し連続検知を防止
         if (now - lastHitTime > 3500) {
           detectDartHit();
         }
@@ -525,7 +531,7 @@
     }
 
     if (diffCount >= 20 && diffCount <= totalPixels * 0.10) {
-      // ダーツの先端（ボード中心に最も近い差分ピクセル）を優先特定してフライト誤検知を防ぐ
+      // 楕円変換を考慮し、中心に最も近い差分ピクセル（ダーツの先端）を優先検出
       let minDistanceToCenter = Infinity;
       let tipPx = null;
 
@@ -533,7 +539,11 @@
       const normCenterY = (boardCenterY / canvas.height) * procCanvas.height;
 
       changedPixels.forEach(p => {
-        const dist = Math.hypot(p.x - normCenterX, p.y - normCenterY);
+        // 楕円比率に合わせて距離を計算
+        const dx = (p.x - normCenterX) / scaleX;
+        const dy = (p.y - normCenterY) / scaleY;
+        const dist = Math.hypot(dx, dy);
+
         if (dist < minDistanceToCenter) {
           minDistanceToCenter = dist;
           tipPx = p;
@@ -703,33 +713,44 @@
     if (btnConfirm) btnConfirm.disabled = (currentThrowIndex < 3 && !throws.some(t => t !== null));
   }
 
+  // 楕円状の重ね合わせ描画（斜め撮影補正）
   function drawOverlayBoard() {
     ctx.strokeStyle = "rgba(0, 255, 204, 0.85)";
     ctx.lineWidth = 2.5;
 
-    ctx.beginPath(); ctx.arc(boardCenterX, boardCenterY, doubleOuterRadius, 0, Math.PI * 2); ctx.stroke();
-    ctx.beginPath(); ctx.arc(boardCenterX, boardCenterY, doubleOuterRadius * 0.92, 0, Math.PI * 2); ctx.stroke();
-    ctx.beginPath(); ctx.arc(boardCenterX, boardCenterY, doubleOuterRadius * 0.65, 0, Math.PI * 2); ctx.stroke();
-    ctx.beginPath(); ctx.arc(boardCenterX, boardCenterY, doubleOuterRadius * 0.58, 0, Math.PI * 2); ctx.stroke();
-    ctx.beginPath(); ctx.arc(boardCenterX, boardCenterY, doubleOuterRadius * 0.09, 0, Math.PI * 2); ctx.stroke();
-    ctx.beginPath(); ctx.arc(boardCenterX, boardCenterY, doubleOuterRadius * 0.04, 0, Math.PI * 2); ctx.stroke();
+    const rx = baseRadius * scaleX;
+    const ry = baseRadius * scaleY;
 
-    const innerBullRadius = doubleOuterRadius * 0.09;
-    const radOffset = (boardRotateAngle * Math.PI) / 180;
+    // 各領域の楕円描画
+    [1.0, 0.92, 0.65, 0.58, 0.09, 0.04].forEach(rRatio => {
+      ctx.beginPath();
+      ctx.ellipse(boardCenterX, boardCenterY, rx * rRatio, ry * rRatio, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    });
 
+    const innerBullRx = rx * 0.09;
+    const innerBullRy = ry * 0.09;
+
+    // セグメント分割線とナンバー描画（20が常に上）
     for (let i = 0; i < 20; i++) {
-      const textAngleRad = (i * 18 - 90) * Math.PI / 180 + radOffset;
-      const textRadius = doubleOuterRadius * 1.12;
+      const textAngleRad = (i * 18 - 90) * Math.PI / 180;
+      const textDistX = rx * 1.12;
+      const textDistY = ry * 1.12;
+
       ctx.fillStyle = "#00ffcc";
       ctx.font = "bold 24px sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(BOARD_NUMBERS[i], boardCenterX + textRadius * Math.cos(textAngleRad), boardCenterY + textRadius * Math.sin(textAngleRad));
+      ctx.fillText(
+        BOARD_NUMBERS[i], 
+        boardCenterX + textDistX * Math.cos(textAngleRad), 
+        boardCenterY + textDistY * Math.sin(textAngleRad)
+      );
 
-      const lineAngleRad = (i * 18 - 90 - 9) * Math.PI / 180 + radOffset;
+      const lineAngleRad = (i * 18 - 90 - 9) * Math.PI / 180;
       ctx.beginPath();
-      ctx.moveTo(boardCenterX + innerBullRadius * Math.cos(lineAngleRad), boardCenterY + innerBullRadius * Math.sin(lineAngleRad));
-      ctx.lineTo(boardCenterX + doubleOuterRadius * Math.cos(lineAngleRad), boardCenterY + doubleOuterRadius * Math.sin(lineAngleRad));
+      ctx.moveTo(boardCenterX + innerBullRx * Math.cos(lineAngleRad), boardCenterY + innerBullRy * Math.sin(lineAngleRad));
+      ctx.lineTo(boardCenterX + rx * Math.cos(lineAngleRad), boardCenterY + ry * Math.sin(lineAngleRad));
       ctx.stroke();
     }
   }
@@ -751,16 +772,19 @@
     });
   }
 
+  // 楕円を正規化（円）に戻して正確に点数を計算
   function calculateScore(x, y) {
-    const dx = x - boardCenterX, dy = y - boardCenterY;
+    // 楕円歪みを補正した相対座標を計算
+    const dx = (x - boardCenterX) / scaleX;
+    const dy = (y - boardCenterY) / scaleY;
     const distance = Math.hypot(dx, dy);
-    const r = distance / doubleOuterRadius;
+    const r = distance / baseRadius;
 
     if (r <= 0.04) return { text: "D-BULL", pts: 50, num: 25, mult: 2 };
     if (r <= 0.09) return { text: "S-BULL", pts: 25, num: 25, mult: 1 };
     if (r > 1.0)  return { text: "OUT", pts: 0, num: 0, mult: 0 };
 
-    let angleRad = Math.atan2(dx, -dy) - (boardRotateAngle * Math.PI / 180);
+    let angleRad = Math.atan2(dx, -dy);
     let angleDeg = (angleRad * 180 / Math.PI + 360) % 360;
     let adjustedAngle = (angleDeg + 9) % 360;
     let index = Math.floor(adjustedAngle / 18);
