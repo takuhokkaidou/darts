@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>ダーツ自動判定＆オンライン同期 Ver 4.0</title>
+  <title>ダーツ自動判定＆オンライン同期 Ver 5.0</title>
   <!-- WebRTCライブラリ (PeerJS) -->
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
   <style>
@@ -29,7 +29,7 @@
     }
     .setup-group { margin-bottom: 10px; text-align: left; }
     .setup-group label { font-size: 0.85rem; color: #aaa; display: block; margin-bottom: 4px; }
-    select, input[type="text"] {
+    select, input[type="text"], input[type="range"] {
       width: 100%;
       padding: 8px;
       background: #333;
@@ -40,15 +40,29 @@
       box-sizing: border-box;
     }
 
+    /* カメラ調整用コントロール */
+    .calib-panel {
+      background: #181818;
+      border: 1px solid #00ffcc;
+      border-radius: 8px;
+      padding: 10px;
+      max-width: 420px;
+      margin: 10px auto;
+      text-align: left;
+    }
+    .calib-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+    .calib-row label { font-size: 0.75rem; color: #00ffcc; width: 30%; }
+    .calib-row input { width: 65%; }
+
     #board-container { position: relative; display: inline-block; margin: 5px auto; }
     video { display: none; }
     canvas { 
       display: block; 
-      border-radius: 50%; 
+      border-radius: 12px; 
       box-shadow: 0 0 20px rgba(0, 0, 0, 0.8); 
       background: #000;
-      width: 320px;
-      height: 320px;
+      width: 340px;
+      height: 340px;
     }
     #status-msg { font-size: 1rem; color: #00ffcc; margin: 5px 0; font-weight: bold; min-height: 1.5rem; }
     
@@ -154,7 +168,7 @@
 </head>
 <body>
 
-  <h1>🎯 ダーツ自動判定 <span class="version-tag">Ver 4.0</span></h1>
+  <h1>🎯 ダーツ自動判定 <span class="version-tag">Ver 5.0</span></h1>
 
   <video id="video" autoplay playsinline></video>
 
@@ -203,6 +217,27 @@
 
   <div id="board-container" style="display:none;">
     <canvas id="dartboard" width="720" height="720"></canvas>
+  </div>
+
+  <!-- 位置・サイズ位置調整コントロール -->
+  <div class="calib-panel" id="calib-panel" style="display:none;">
+    <div style="font-weight: bold; color: #00ffcc; font-size: 0.85rem; margin-bottom: 8px;">⚙️ カメラ枠の調整（斜め設置対応）</div>
+    <div class="calib-row">
+      <label>横位置 (X):</label>
+      <input type="range" id="calib-x" min="100" max="620" value="360" oninput="updateCalibParams()">
+    </div>
+    <div class="calib-row">
+      <label>縦位置 (Y):</label>
+      <input type="range" id="calib-y" min="100" max="620" value="360" oninput="updateCalibParams()">
+    </div>
+    <div class="calib-row">
+      <label>大きさ (Radius):</label>
+      <input type="range" id="calib-r" min="150" max="350" value="280" oninput="updateCalibParams()">
+    </div>
+    <div class="calib-row">
+      <label>回転角度:</label>
+      <input type="range" id="calib-angle" min="-180" max="180" value="0" oninput="updateCalibParams()">
+    </div>
   </div>
 
   <div id="status-msg"></div>
@@ -255,9 +290,12 @@
   const ctx = canvas.getContext('2d');
   const statusMsg = document.getElementById('status-msg');
   
-  const centerX = canvas.width / 2;
-  const centerY = canvas.height / 2;
-  const doubleOuterRadius = Math.min(centerX, centerY) * 0.78;
+  // カメラ調整パラメータ
+  let boardCenterX = 360;
+  let boardCenterY = 360;
+  let doubleOuterRadius = 280;
+  let boardRotateAngle = 0; // 度単位
+
   const BOARD_NUMBERS = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5];
 
   const procCanvas = document.createElement('canvas');
@@ -284,6 +322,13 @@
   let isDetecting = false;
   let lastHitTime = 0;
 
+  function updateCalibParams() {
+    boardCenterX = parseFloat(document.getElementById('calib-x').value);
+    boardCenterY = parseFloat(document.getElementById('calib-y').value);
+    doubleOuterRadius = parseFloat(document.getElementById('calib-r').value);
+    boardRotateAngle = parseFloat(document.getElementById('calib-angle').value);
+  }
+
   function toggleRoleUI() {
     role = document.getElementById('device-role').value;
     document.getElementById('remote-input-group').style.display = (role === 'camera') ? 'block' : 'none';
@@ -303,7 +348,6 @@
     }
   }
 
-  // P2P通信: ディスプレイ側の処理
   function initPeerDisplay() {
     const randomId = Math.floor(1000 + Math.random() * 9000).toString();
     peer = new Peer(randomId);
@@ -323,7 +367,6 @@
     });
   }
 
-  // P2P通信: カメラ側の処理
   function initPeerCamera() {
     const targetId = document.getElementById('target-peer-id').value;
     if (!targetId) { alert("接続用IDを入力してください"); return; }
@@ -337,7 +380,8 @@
         document.getElementById('setup-panel').style.display = 'none';
         document.getElementById('cam-controls').style.display = 'flex';
         document.getElementById('board-container').style.display = 'inline-block';
-        document.getElementById('game-ui').style.display = 'none'; // カメラ端末はボードメイン
+        document.getElementById('calib-panel').style.display = 'block';
+        document.getElementById('game-ui').style.display = 'none';
         statusMsg.innerText = "接続成功！「1. カメラ起動」を押してください";
         setupDataListener();
       });
@@ -388,6 +432,7 @@
     if (role === 'single') {
       document.getElementById('cam-controls').style.display = 'flex';
       document.getElementById('board-container').style.display = 'inline-block';
+      document.getElementById('calib-panel').style.display = 'block';
     }
     
     if (role !== 'camera') {
@@ -413,7 +458,7 @@
       video.srcObject = stream;
       await video.play();
       document.getElementById('btn-base').disabled = false;
-      statusMsg.innerText = "「2. 基準撮影」を押してラウンドを開始してください";
+      statusMsg.innerText = "枠の位置を調整し、「2. 基準撮影」を押してください";
       requestAnimationFrame(updateLoop);
     } catch (err) {
       alert("カメラエラー: " + err);
@@ -441,7 +486,8 @@
       
       if (isDetecting && baseImageData && currentThrowIndex < 3) {
         const now = Date.now();
-        if (now - lastHitTime > 2000) {
+        // 判定インターバルを 3.5秒に延長して連続判定を防ぐ
+        if (now - lastHitTime > 3500) {
           detectDartHit();
         }
       }
@@ -473,23 +519,30 @@
     const diffCount = changedPixels.length;
 
     if (diffCount > totalPixels * 0.12) {
-      statusMsg.innerText = "⚠️ 明るさ/位置ズレ検知。再補正中...";
+      statusMsg.innerText = "⚠️ 大きな動きを検知。揺れ収まり待機中...";
       baseImageData = currentData;
       return;
     }
 
-    if (diffCount >= 25 && diffCount <= totalPixels * 0.10) {
-      let sumX = 0, sumY = 0;
-      changedPixels.forEach(p => { sumX += p.x; sumY += p.y; });
-      const avgPx = sumX / diffCount, avgPy = sumY / diffCount;
+    if (diffCount >= 20 && diffCount <= totalPixels * 0.10) {
+      // ダーツの先端（ボード中心に最も近い差分ピクセル）を優先特定してフライト誤検知を防ぐ
+      let minDistanceToCenter = Infinity;
+      let tipPx = null;
 
-      let spreadRadius = 0;
-      changedPixels.forEach(p => { spreadRadius += Math.hypot(p.x - avgPx, p.y - avgPy); });
-      spreadRadius /= diffCount;
+      const normCenterX = (boardCenterX / canvas.width) * procCanvas.width;
+      const normCenterY = (boardCenterY / canvas.height) * procCanvas.height;
 
-      if (spreadRadius < 25) {
-        const canvasX = (avgPx / procCanvas.width) * canvas.width;
-        const canvasY = (avgPy / procCanvas.height) * canvas.height;
+      changedPixels.forEach(p => {
+        const dist = Math.hypot(p.x - normCenterX, p.y - normCenterY);
+        if (dist < minDistanceToCenter) {
+          minDistanceToCenter = dist;
+          tipPx = p;
+        }
+      });
+
+      if (tipPx) {
+        const canvasX = (tipPx.x / procCanvas.width) * canvas.width;
+        const canvasY = (tipPx.y / procCanvas.height) * canvas.height;
 
         const score = calculateScore(canvasX, canvasY);
         
@@ -500,7 +553,7 @@
         currentThrowIndex++;
         if (currentThrowIndex >= 3) {
           isDetecting = false;
-          statusMsg.innerText = "3投完了！";
+          statusMsg.innerText = "3投完了！確定を行ってください";
         } else {
           statusMsg.innerText = `🎯 (${currentThrowIndex + 1}投目検知)`;
         }
@@ -654,28 +707,29 @@
     ctx.strokeStyle = "rgba(0, 255, 204, 0.85)";
     ctx.lineWidth = 2.5;
 
-    ctx.beginPath(); ctx.arc(centerX, centerY, doubleOuterRadius, 0, Math.PI * 2); ctx.stroke();
-    ctx.beginPath(); ctx.arc(centerX, centerY, doubleOuterRadius * 0.92, 0, Math.PI * 2); ctx.stroke();
-    ctx.beginPath(); ctx.arc(centerX, centerY, doubleOuterRadius * 0.65, 0, Math.PI * 2); ctx.stroke();
-    ctx.beginPath(); ctx.arc(centerX, centerY, doubleOuterRadius * 0.58, 0, Math.PI * 2); ctx.stroke();
-    ctx.beginPath(); ctx.arc(centerX, centerY, doubleOuterRadius * 0.09, 0, Math.PI * 2); ctx.stroke();
-    ctx.beginPath(); ctx.arc(centerX, centerY, doubleOuterRadius * 0.04, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(boardCenterX, boardCenterY, doubleOuterRadius, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(boardCenterX, boardCenterY, doubleOuterRadius * 0.92, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(boardCenterX, boardCenterY, doubleOuterRadius * 0.65, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(boardCenterX, boardCenterY, doubleOuterRadius * 0.58, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(boardCenterX, boardCenterY, doubleOuterRadius * 0.09, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(boardCenterX, boardCenterY, doubleOuterRadius * 0.04, 0, Math.PI * 2); ctx.stroke();
 
     const innerBullRadius = doubleOuterRadius * 0.09;
+    const radOffset = (boardRotateAngle * Math.PI) / 180;
 
     for (let i = 0; i < 20; i++) {
-      const textAngleRad = (i * 18 - 90) * Math.PI / 180;
+      const textAngleRad = (i * 18 - 90) * Math.PI / 180 + radOffset;
       const textRadius = doubleOuterRadius * 1.12;
       ctx.fillStyle = "#00ffcc";
-      ctx.font = "bold 26px sans-serif";
+      ctx.font = "bold 24px sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(BOARD_NUMBERS[i], centerX + textRadius * Math.cos(textAngleRad), centerY + textRadius * Math.sin(textAngleRad));
+      ctx.fillText(BOARD_NUMBERS[i], boardCenterX + textRadius * Math.cos(textAngleRad), boardCenterY + textRadius * Math.sin(textAngleRad));
 
-      const lineAngleRad = (i * 18 - 90 - 9) * Math.PI / 180;
+      const lineAngleRad = (i * 18 - 90 - 9) * Math.PI / 180 + radOffset;
       ctx.beginPath();
-      ctx.moveTo(centerX + innerBullRadius * Math.cos(lineAngleRad), centerY + innerBullRadius * Math.sin(lineAngleRad));
-      ctx.lineTo(centerX + doubleOuterRadius * Math.cos(lineAngleRad), centerY + doubleOuterRadius * Math.sin(lineAngleRad));
+      ctx.moveTo(boardCenterX + innerBullRadius * Math.cos(lineAngleRad), boardCenterY + innerBullRadius * Math.sin(lineAngleRad));
+      ctx.lineTo(boardCenterX + doubleOuterRadius * Math.cos(lineAngleRad), boardCenterY + doubleOuterRadius * Math.sin(lineAngleRad));
       ctx.stroke();
     }
   }
@@ -698,7 +752,7 @@
   }
 
   function calculateScore(x, y) {
-    const dx = x - centerX, dy = y - centerY;
+    const dx = x - boardCenterX, dy = y - boardCenterY;
     const distance = Math.hypot(dx, dy);
     const r = distance / doubleOuterRadius;
 
@@ -706,7 +760,7 @@
     if (r <= 0.09) return { text: "S-BULL", pts: 25, num: 25, mult: 1 };
     if (r > 1.0)  return { text: "OUT", pts: 0, num: 0, mult: 0 };
 
-    let angleRad = Math.atan2(dx, -dy);
+    let angleRad = Math.atan2(dx, -dy) - (boardRotateAngle * Math.PI / 180);
     let angleDeg = (angleRad * 180 / Math.PI + 360) % 360;
     let adjustedAngle = (angleDeg + 9) % 360;
     let index = Math.floor(adjustedAngle / 18);
