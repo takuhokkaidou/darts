@@ -3,75 +3,245 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>ダーツ自動判定 Ver 6.2</title>
+  <title>ダーツ自動判定＆オンライン同期 Ver 6.1</title>
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; text-align: center; background-color: #121212; color: #fff; margin: 0; padding: 10px; touch-action: manipulation; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+      text-align: center; 
+      background-color: #121212; 
+      color: #fff; 
+      margin: 0; 
+      padding: 10px;
+      touch-action: manipulation;
+    }
     h1 { font-size: 1.2rem; margin: 5px 0; }
-    .version-tag { font-size: 0.8rem; color: #00ffcc; }
-    .setup-panel { background: #1e1e1e; border: 1px solid #333; border-radius: 12px; padding: 12px; max-width: 420px; margin: 10px auto; }
+    .version-tag { font-size: 0.8rem; color: #00ffcc; margin-left: 5px; }
+    
+    .setup-panel {
+      background: #1e1e1e;
+      border: 1px solid #333;
+      border-radius: 12px;
+      padding: 12px;
+      max-width: 420px;
+      margin: 10px auto;
+    }
     .setup-group { margin-bottom: 10px; text-align: left; }
     .setup-group label { font-size: 0.85rem; color: #aaa; display: block; margin-bottom: 4px; }
-    select, input[type="number"] { width: 100%; padding: 8px; background: #333; color: #fff; border: 1px solid #555; border-radius: 6px; font-size: 1.2rem; box-sizing: border-box; text-align: center; }
-    .peer-id-box { background: #000; border: 2px dashed #00ffcc; padding: 12px; font-family: monospace; font-size: 2rem; font-weight: bold; color: #00ffcc; margin: 5px 0; letter-spacing: 4px; border-radius: 6px; text-align: center; }
-    
+    select, input[type="text"], input[type="range"] {
+      width: 100%;
+      padding: 8px;
+      background: #333;
+      color: #fff;
+      border: 1px solid #555;
+      border-radius: 6px;
+      font-size: 1rem;
+      box-sizing: border-box;
+    }
+
+    .calib-panel {
+      background: #181818;
+      border: 1px solid #00ffcc;
+      border-radius: 8px;
+      padding: 10px;
+      max-width: 420px;
+      margin: 10px auto;
+      text-align: left;
+    }
+    .calib-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+    .calib-row label { font-size: 0.75rem; color: #00ffcc; width: 38%; }
+    .calib-row input { width: 58%; }
+
     #board-container { position: relative; display: inline-block; margin: 5px auto; }
     video { display: none; }
-    canvas { display: block; border-radius: 12px; box-shadow: 0 0 20px rgba(0,0,0,0.8); background: #000; width: 340px; height: 340px; }
+    canvas { 
+      display: block; 
+      border-radius: 12px; 
+      box-shadow: 0 0 20px rgba(0, 0, 0, 0.8); 
+      background: #000;
+      width: 340px;
+      height: 340px;
+    }
     #status-msg { font-size: 1rem; color: #00ffcc; margin: 5px 0; font-weight: bold; min-height: 1.5rem; }
     
-    .game-info { display: flex; justify-content: space-between; align-items: center; max-width: 420px; margin: 5px auto; background: #222; padding: 8px 12px; border-radius: 8px; }
+    .game-info {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      max-width: 420px;
+      margin: 5px auto;
+      background: #222;
+      padding: 8px 12px;
+      border-radius: 8px;
+    }
     .player-turn { font-size: 1.1rem; font-weight: bold; color: #ff9800; }
-    .scoreboard { display: flex; justify-content: center; gap: 6px; max-width: 420px; margin: 8px auto; }
-    .p-card { background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 6px; flex: 1; }
+    .round-info { font-size: 0.9rem; color: #aaa; }
+
+    .scoreboard {
+      display: flex;
+      justify-content: center;
+      gap: 6px;
+      max-width: 420px;
+      margin: 8px auto;
+    }
+    .p-card {
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 6px;
+      flex: 1;
+    }
     .p-card.active { border-color: #ff9800; box-shadow: 0 0 8px rgba(255,152,0,0.5); }
+    .p-name { font-size: 0.75rem; color: #888; }
     .p-score { font-size: 1.2rem; font-weight: bold; color: #fff; }
+
     .throws-container { display: flex; justify-content: center; gap: 8px; margin: 8px 0; }
-    .throw-box { background: #222; border: 1px solid #444; border-radius: 8px; padding: 6px 10px; min-width: 70px; }
+    .throw-box {
+      background: #222;
+      border: 1px solid #444;
+      border-radius: 8px;
+      padding: 6px 10px;
+      min-width: 70px;
+      cursor: pointer;
+    }
+    .throw-box.active { border-color: #00ffcc; box-shadow: 0 0 8px #00ffcc; }
+    .throw-label { font-size: 0.7rem; color: #888; }
+    .throw-score { font-size: 1.1rem; font-weight: bold; color: #fff; }
+
+    .controls { margin-bottom: 10px; display: flex; justify-content: center; gap: 8px; }
+    .panel { background: #1e1e1e; padding: 10px; border-radius: 12px; max-width: 420px; margin: 5px auto; border: 1px solid #333; }
+    .panel-title { font-size: 0.85rem; color: #aaa; margin-bottom: 6px; }
+    .btn-group { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; }
     
-    .controls { display: flex; justify-content: center; gap: 6px; max-width: 420px; margin: 5px auto; flex-wrap: wrap; }
-    button { padding: 10px 12px; font-size: 0.9rem; border: none; border-radius: 6px; background-color: #333; color: #fff; cursor: pointer; flex-grow: 1; margin: 2px; }
+    button { 
+      padding: 10px 12px; 
+      font-size: 0.9rem; 
+      border: none; 
+      border-radius: 6px; 
+      background-color: #333; 
+      color: #fff; 
+      cursor: pointer; 
+      flex-grow: 1; 
+      min-width: 40px;
+      -webkit-tap-highlight-color: transparent;
+    }
+    button:active { background-color: #555; }
     button.action-btn { background-color: #ff9800; font-weight: bold; color: #000; }
     button.confirm-btn { background-color: #00cc88; font-weight: bold; color: #000; font-size: 1rem; padding: 10px; }
+    button.abort-btn { background-color: #442222; color: #ff6666; font-size: 0.8rem; margin-top: 8px; }
+    button.multiplier { background-color: #005588; font-weight: bold;}
+    button.active { background-color: #00cc88; box-shadow: 0 0 10px #00cc88; }
+    button.special { background-color: #aa2222; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .stats-table {
+      width: 100%;
+      max-width: 420px;
+      margin: 10px auto;
+      border-collapse: collapse;
+      background: #181818;
+      border-radius: 8px;
+      overflow: hidden;
+      font-size: 0.85rem;
+    }
+    .stats-table th, .stats-table td {
+      border: 1px solid #333;
+      padding: 6px;
+      text-align: center;
+    }
+    .stats-table th { background: #252525; color: #00ffcc; }
+
+    .peer-id-badge {
+      background: #005588;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-family: monospace;
+      font-size: 1.1rem;
+      letter-spacing: 1px;
+      color: #00ffcc;
+      display: inline-block;
+      margin: 5px 0;
+    }
   </style>
 </head>
 <body>
 
-  <h1>🎯 ダーツ自動判定 <span class="version-tag">Ver 6.2</span></h1>
+  <h1>🎯 ダーツ自動判定 <span class="version-tag">Ver 6.1</span></h1>
+
   <video id="video" autoplay playsinline></video>
 
-  <!-- 設定パネル -->
   <div class="setup-panel" id="setup-panel">
     <div class="setup-group">
       <label>端末役割</label>
       <select id="device-role" onchange="toggleRoleUI()">
         <option value="single">1台でプレイ (カメラ＋表示)</option>
-        <option value="display">ディスプレイ (表示専用)</option>
-        <option value="camera">カメラ (撮影専用)</option>
+        <option value="display">ディスプレイ (表示・操作専用)</option>
+        <option value="camera">カメラ (撮影・判定専用)</option>
       </select>
     </div>
 
-    <div id="display-id-group" class="setup-group" style="display:none;">
-      <label>接続コード (カメラ側に入力)</label>
-      <div class="peer-id-box" id="my-peer-id">----</div>
-      <button onclick="initPeer()" style="font-size: 0.8rem; padding: 6px; margin-top: 4px;">🔄 別の4桁コードを発行</button>
-    </div>
-
     <div id="remote-input-group" class="setup-group" style="display:none;">
-      <label>接続コード (ディスプレイの4桁数字)</label>
-      <input type="number" id="target-peer-id" placeholder="例: 1234" pattern="\d*" maxlength="4">
+      <label>接続用 ID (ディスプレイ側に表示されるIDを入力)</label>
+      <input type="text" id="target-peer-id" placeholder="例: 1234">
     </div>
 
-    <button class="action-btn" style="width: 100%; margin-top: 10px;" onclick="startApp()">🎮 スタート</button>
+    <div class="setup-group" id="game-mode-group">
+      <label>ゲームモード</label>
+      <select id="game-mode">
+        <option value="countup">Count-Up (8R)</option>
+        <option value="501">501 (8R Limit)</option>
+        <option value="cricket">Cricket (15R Limit)</option>
+      </select>
+    </div>
+
+    <div class="setup-group" id="player-count-group">
+      <label>プレイヤー人数</label>
+      <select id="player-count">
+        <option value="1">1 Player</option>
+        <option value="2">2 Players</option>
+        <option value="3">3 Players</option>
+        <option value="4">4 Players</option>
+      </select>
+    </div>
+
+    <button class="action-btn" style="width: 100%;" onclick="startApp()">🎮 スタート</button>
   </div>
 
   <div class="controls" id="cam-controls" style="display:none;">
-    <button class="action-btn" onclick="startCamera()">📷 1. カメラ起動</button>
-    <button class="action-btn" id="btn-base" onclick="captureBase()" disabled>🎯 2. 基準撮影(判定開始)</button>
+    <button class="action-btn" id="btn-start-cam" onclick="startCamera()">📷 1. カメラ起動</button>
+    <button class="action-btn" id="btn-base" onclick="captureBase()" disabled>🎯 2. 基準撮影(ラウンド開始)</button>
   </div>
 
   <div id="board-container" style="display:none;">
     <canvas id="dartboard" width="720" height="720"></canvas>
+  </div>
+
+  <div class="calib-panel" id="calib-panel" style="display:none;">
+    <div style="font-weight: bold; color: #00ffcc; font-size: 0.85rem; margin-bottom: 8px;">⚙️ カメラズーム ＆ 補正設定</div>
+    <div class="calib-row">
+      <label>🔍 カメラズーム:</label>
+      <input type="range" id="calib-zoom" min="100" max="300" value="100" oninput="updateCalibParams()">
+    </div>
+    <div class="calib-row">
+      <label>横位置 (X):</label>
+      <input type="range" id="calib-x" min="100" max="620" value="360" oninput="updateCalibParams()">
+    </div>
+    <div class="calib-row">
+      <label>縦位置 (Y):</label>
+      <input type="range" id="calib-y" min="100" max="620" value="360" oninput="updateCalibParams()">
+    </div>
+    <div class="calib-row">
+      <label>全体サイズ:</label>
+      <input type="range" id="calib-r" min="150" max="350" value="280" oninput="updateCalibParams()">
+    </div>
+    <div class="calib-row">
+      <label>縦のつぶれ(上下傾き):</label>
+      <input type="range" id="calib-scale-y" min="50" max="150" value="100" oninput="updateCalibParams()">
+    </div>
+    <div class="calib-row">
+      <label>横のつぶれ(左右傾き):</label>
+      <input type="range" id="calib-scale-x" min="50" max="150" value="100" oninput="updateCalibParams()">
+    </div>
   </div>
 
   <div id="status-msg"></div>
@@ -79,15 +249,42 @@
   <div id="game-ui" style="display:none;">
     <div class="game-info">
       <div class="player-turn" id="turn-display">P1 の番です</div>
-      <button onclick="resetGame()" style="flex-grow:0; padding: 4px 8px; font-size: 0.8rem;">🔄 リセット</button>
+      <div class="round-info" id="round-display">Round 1 / 8</div>
     </div>
+
     <div class="scoreboard" id="scoreboard"></div>
+
     <div class="throws-container">
-      <div class="throw-box">1投目: <span id="score-1">-</span></div>
-      <div class="throw-box">2投目: <span id="score-2">-</span></div>
-      <div class="throw-box">3投目: <span id="score-3">-</span></div>
+      <div class="throw-box" id="box-1"><div class="throw-label">1投目</div><div class="throw-score" id="score-1">-</div></div>
+      <div class="throw-box" id="box-2"><div class="throw-label">2投目</div><div class="throw-score" id="score-2">-</div></div>
+      <div class="throw-box" id="box-3"><div class="throw-label">3投目</div><div class="throw-score" id="score-3">-</div></div>
     </div>
-    <button class="confirm-btn" id="btn-confirm" onclick="confirmRound()" style="width: 100%; margin-top: 10px;" disabled>✅ スコア確定</button>
+
+    <div class="panel" id="action-panel">
+      <button class="confirm-btn" id="btn-confirm" onclick="confirmRound()" style="width: 100%; margin-bottom: 10px;" disabled>✅ スコア確定 ＆ プレイヤー交代</button>
+
+      <div class="panel-title">🔧 手動修正 (枠をタップして選択)</div>
+      <div class="btn-group" style="margin-bottom: 8px;">
+        <button class="multiplier active" id="btn-S" onclick="setMultiplier('S')">Single</button>
+        <button class="multiplier" id="btn-D" onclick="setMultiplier('D')">Double</button>
+        <button class="multiplier" id="btn-T" onclick="setMultiplier('T')">Triple</button>
+      </div>
+
+      <div class="btn-group">
+        <script>
+          for (let i = 1; i <= 20; i++) {
+            document.write(`<button onclick="manualScore(${i})">${i}</button>`);
+          }
+        </script>
+        <button class="special" onclick="manualSpecial('S-BULL', 25, 25)">S-BULL</button>
+        <button class="special" onclick="manualSpecial('D-BULL', 50, 25)">D-BULL</button>
+        <button onclick="manualSpecial('OUT', 0, 0)">OUT</button>
+      </div>
+
+      <button class="abort-btn" style="width:100%;" onclick="abortGame()">🛑 ゲームを途中で終了する</button>
+    </div>
+
+    <div id="live-stats-area"></div>
   </div>
 
 <script>
@@ -95,114 +292,179 @@
   const canvas = document.getElementById('dartboard');
   const ctx = canvas.getContext('2d');
   const statusMsg = document.getElementById('status-msg');
+  
+  let videoTrack = null;
+  let zoomLevel = 1.0;
+  let boardCenterX = 360;
+  let boardCenterY = 360;
+  let baseRadius = 280;
+  let scaleY = 1.0;
+  let scaleX = 1.0;
 
-  let peer = null;
-  let conn = null;
-  let role = 'single';
-  let shortCode = "";
-
-  const ID_PREFIX = "darts-app-";
   const BOARD_NUMBERS = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5];
+
   const procCanvas = document.createElement('canvas');
   procCanvas.width = 180; procCanvas.height = 180;
   const procCtx = procCanvas.getContext('2d');
 
-  let boardCenter = { x: 360, y: 360, r: 280 };
   let baseImageData = null;
-  let isDetecting = false;
+  let currentMultiplier = 'S';
+  
+  let role = 'single';
+  let peer = null;
+  let conn = null;
+
+  let gameMode = 'countup';
+  let playerCount = 1;
+  let currentRound = 1;
+  let maxRounds = 8;
+  let currentPlayerIdx = 0;
+  let players = [];
+  
   let throws = [null, null, null];
   let currentThrowIndex = 0;
+  let selectedSlotIndex = 0;
+  let isDetecting = false;
   let lastHitTime = 0;
 
-  let gameState = {
-    players: [ { name: "P1", score: 501 }, { name: "P2", score: 501 } ],
-    currentPlayer: 0
-  };
+  function updateCalibParams() {
+    zoomLevel = parseFloat(document.getElementById('calib-zoom').value) / 100.0;
+    boardCenterX = parseFloat(document.getElementById('calib-x').value);
+    boardCenterY = parseFloat(document.getElementById('calib-y').value);
+    baseRadius = parseFloat(document.getElementById('calib-r').value);
+    scaleY = parseFloat(document.getElementById('calib-scale-y').value) / 100.0;
+    scaleX = parseFloat(document.getElementById('calib-scale-x').value) / 100.0;
 
-  function toggleRoleUI() {
-    role = document.getElementById('device-role').value;
-    const isDisplay = (role === 'display');
-    const isCamera = (role === 'camera');
-    
-    document.getElementById('display-id-group').style.display = isDisplay ? 'block' : 'none';
-    document.getElementById('remote-input-group').style.display = isCamera ? 'block' : 'none';
-
-    if (isDisplay && !peer) {
-      initPeer();
+    // ハードウェアズーム制御を直接呼び出し
+    if (videoTrack) {
+      const capabilities = videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
+      if (capabilities.zoom) {
+        const minZ = capabilities.zoom.min || 1;
+        const maxZ = capabilities.zoom.max || 3;
+        const targetZoom = minZ + (zoomLevel - 1) * (maxZ - minZ) / 2;
+        videoTrack.applyConstraints({ advanced: [{ zoom: Math.min(targetZoom, maxZ) }] }).catch(() => {});
+      }
     }
   }
 
-  function initPeer() {
-    const idBox = document.getElementById('my-peer-id');
-    if (idBox) idBox.innerText = "生成中...";
-
-    if (peer) peer.destroy();
-    
-    shortCode = Math.floor(1000 + Math.random() * 9000).toString();
-    const fullId = ID_PREFIX + shortCode;
-
-    peer = new Peer(fullId);
-
-    peer.on('open', id => {
-      if (idBox) idBox.innerText = shortCode;
-    });
-
-    peer.on('connection', c => {
-      conn = c;
-      setupConnection();
-    });
-
-    peer.on('error', err => {
-      if (err.type === 'unavailable-id') {
-        initPeer();
-      } else {
-        if (idBox) idBox.innerText = "エラー";
-      }
-    });
-  }
-
-  function setupConnection() {
-    statusMsg.innerText = "⚡ 通信接続完了！";
-    conn.on('data', data => {
-      if (data.type === 'SYNC_BOARD') {
-        boardCenter = data.boardCenter;
-        throws = data.throws;
-        gameState = data.gameState;
-        drawCanvasFromData(data.imgData);
-        updateUI();
-      }
-    });
+  function toggleRoleUI() {
+    role = document.getElementById('device-role').value;
+    document.getElementById('remote-input-group').style.display = (role === 'camera') ? 'block' : 'none';
+    document.getElementById('game-mode-group').style.display = (role === 'camera') ? 'none' : 'block';
+    document.getElementById('player-count-group').style.display = (role === 'camera') ? 'none' : 'block';
   }
 
   function startApp() {
     role = document.getElementById('device-role').value;
-    document.getElementById('setup-panel').style.display = 'none';
 
-    if (role === 'camera') {
-      const inputCode = document.getElementById('target-peer-id').value.trim();
-      if (!inputCode || inputCode.length !== 4) {
-        alert("ディスプレイに表示されている4桁の数字を入力してください。");
-        document.getElementById('setup-panel').style.display = 'block';
-        return;
-      }
-      
-      const targetFullId = ID_PREFIX + inputCode;
-      if (!peer) peer = new Peer();
-      
-      conn = peer.connect(targetFullId);
-      setupConnection();
-      
-      document.getElementById('cam-controls').style.display = 'flex';
-      document.getElementById('board-container').style.display = 'inline-block';
-    } else if (role === 'display') {
-      document.getElementById('board-container').style.display = 'inline-block';
-      document.getElementById('game-ui').style.display = 'block';
+    if (role === 'display') {
+      initPeerDisplay();
+    } else if (role === 'camera') {
+      initPeerCamera();
     } else {
+      initGame();
+    }
+  }
+
+  function initPeerDisplay() {
+    const randomId = Math.floor(1000 + Math.random() * 9000).toString();
+    peer = new Peer(randomId);
+
+    statusMsg.innerHTML = `通信準備中...`;
+
+    peer.on('open', id => {
+      document.getElementById('setup-panel').style.display = 'none';
+      statusMsg.innerHTML = `カメラ端末でこのIDを入力してください: <br><span class="peer-id-badge">${id}</span>`;
+    });
+
+    peer.on('connection', c => {
+      conn = c;
+      statusMsg.innerText = "カメラ端末と接続されました！ゲームを開始します";
+      initGame();
+      setupDataListener();
+    });
+  }
+
+  function initPeerCamera() {
+    const targetId = document.getElementById('target-peer-id').value;
+    if (!targetId) { alert("接続用IDを入力してください"); return; }
+
+    peer = new Peer();
+    peer.on('open', () => {
+      statusMsg.innerText = "ディスプレイに接続中...";
+      conn = peer.connect(targetId);
+
+      conn.on('open', () => {
+        document.getElementById('setup-panel').style.display = 'none';
+        document.getElementById('cam-controls').style.display = 'flex';
+        document.getElementById('board-container').style.display = 'inline-block';
+        document.getElementById('calib-panel').style.display = 'block';
+        document.getElementById('game-ui').style.display = 'none';
+        statusMsg.innerText = "接続成功！「1. カメラ起動」を押してください";
+        setupDataListener();
+      });
+    });
+  }
+
+  function sendData(type, payload) {
+    if (conn && conn.open) {
+      conn.send({ type, payload });
+    }
+  }
+
+  function setupDataListener() {
+    conn.on('data', data => {
+      if (data.type === 'SYNC_THROWS') {
+        throws = data.payload.throws;
+        currentThrowIndex = data.payload.currentThrowIndex;
+        updateUI();
+      } else if (data.type === 'START_ROUND') {
+        captureBase();
+      } else if (data.type === 'CONFIRM_ROUND') {
+        confirmRound(true);
+      }
+    });
+  }
+
+  function initGame() {
+    if (role !== 'camera') {
+      gameMode = document.getElementById('game-mode').value;
+      playerCount = parseInt(document.getElementById('player-count').value);
+      
+      maxRounds = (gameMode === 'cricket') ? 15 : 8;
+      currentRound = 1;
+      currentPlayerIdx = 0;
+      
+      players = [];
+      for(let i=0; i<playerCount; i++) {
+        players.push({
+          name: `P${i+1}`,
+          score: (gameMode === '501') ? 501 : 0,
+          cricketState: {20:0, 19:0, 18:0, 17:0, 16:0, 15:0, 25:0},
+          roundHistory: []
+        });
+      }
+    }
+
+    document.getElementById('setup-panel').style.display = 'none';
+    if (role === 'single') {
       document.getElementById('cam-controls').style.display = 'flex';
       document.getElementById('board-container').style.display = 'inline-block';
-      document.getElementById('game-ui').style.display = 'block';
+      document.getElementById('calib-panel').style.display = 'block';
     }
-    renderScoreboard();
+    
+    if (role !== 'camera') {
+      document.getElementById('game-ui').style.display = 'block';
+      updateScoreboardUI();
+      renderLiveStats();
+      statusMsg.innerText = "ゲーム開始！カメラ側の基準撮影を待っています";
+    }
+  }
+
+  function abortGame() {
+    if (confirm("ゲームを中断して最初の画面に戻りますか？")) {
+      location.reload();
+    }
   }
 
   async function startCamera() {
@@ -212,61 +474,61 @@
         video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 1280 } }
       });
       video.srcObject = stream;
+      videoTrack = stream.getVideoTracks()[0];
       await video.play();
       document.getElementById('btn-base').disabled = false;
-      statusMsg.innerText = "ボード全体を画面中央に合わせて「2. 基準撮影」を押してください。";
+      statusMsg.innerText = "ズーム・位置を調整し、「2. 基準撮影」を押してください";
       requestAnimationFrame(updateLoop);
-    } catch (err) { alert("カメラエラー: " + err); }
+    } catch (err) {
+      alert("カメラエラー: " + err);
+      statusMsg.innerText = "カメラ起動失敗";
+    }
+  }
+
+  function drawCroppedVideo(targetCtx, targetW, targetH) {
+    const vW = video.videoWidth;
+    const vH = video.videoHeight;
+    const cropW = vW / zoomLevel;
+    const cropH = vH / zoomLevel;
+    const cropX = (vW - cropW) / 2;
+    const cropY = (vH - cropH) / 2;
+
+    targetCtx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, targetW, targetH);
   }
 
   function captureBase() {
-    autoAlignBoard();
-    procCtx.drawImage(video, 0, 0, procCanvas.width, procCanvas.height);
+    drawCroppedVideo(procCtx, procCanvas.width, procCanvas.height);
     baseImageData = procCtx.getImageData(0, 0, procCanvas.width, procCanvas.height);
-    throws = [null, null, null]; currentThrowIndex = 0;
-    isDetecting = true;
+    
+    throws = [null, null, null];
+    currentThrowIndex = 0;
+    selectedSlotIndex = 0;
     updateUI();
-    statusMsg.innerText = "🎯 判定中... (1投目を投げてください)";
-  }
-
-  function autoAlignBoard() {
-    procCtx.drawImage(video, 0, 0, procCanvas.width, procCanvas.height);
-    const imgData = procCtx.getImageData(0, 0, procCanvas.width, procCanvas.height);
-    const data = imgData.data;
-    let sumX = 0, sumY = 0, count = 0;
-    for (let i = 0; i < data.length; i += 4) {
-      const brightness = (data[i] + data[i+1] + data[i+2]) / 3;
-      if (brightness > 60 && brightness < 220) {
-        const pixelIdx = i / 4;
-        sumX += pixelIdx % procCanvas.width;
-        sumY += Math.floor(pixelIdx / procCanvas.width);
-        count++;
-      }
-    }
-    if (count > 0) {
-      boardCenter.x = (sumX / count) / procCanvas.width * canvas.width;
-      boardCenter.y = (sumY / count) / procCanvas.height * canvas.height;
-    }
+    
+    isDetecting = true;
+    statusMsg.innerText = `🎯 判定中... (1投目)`;
+    sendData('SYNC_THROWS', { throws, currentThrowIndex });
   }
 
   function updateLoop() {
     if (video.readyState === video.HAVE_ENOUGH_DATA) {
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      drawCroppedVideo(ctx, canvas.width, canvas.height);
       
       if (isDetecting && baseImageData && currentThrowIndex < 3) {
-        if (Date.now() - lastHitTime > 3000) detectDartHit();
+        const now = Date.now();
+        if (now - lastHitTime > 3500) {
+          detectDartHit();
+        }
       }
 
-      drawBoardOverlay();
+      drawOverlayBoard();
       drawHitPoints();
-
-      if (conn && conn.open) sendDataToDisplay();
     }
     requestAnimationFrame(updateLoop);
   }
 
   function detectDartHit() {
-    procCtx.drawImage(video, 0, 0, procCanvas.width, procCanvas.height);
+    drawCroppedVideo(procCtx, procCanvas.width, procCanvas.height);
     const currentData = procCtx.getImageData(0, 0, procCanvas.width, procCanvas.height);
 
     let changedPixels = [];
@@ -277,28 +539,32 @@
                    Math.abs(currentData.data[i+1] - baseImageData.data[i+1]) +
                    Math.abs(currentData.data[i+2] - baseImageData.data[i+2]);
 
-      if (diff > 130) {
+      if (diff > 135) {
         const pixelIdx = i / 4;
         changedPixels.push({ x: pixelIdx % procCanvas.width, y: Math.floor(pixelIdx / procCanvas.width) });
       }
     }
 
     const diffCount = changedPixels.length;
+
     if (diffCount > totalPixels * 0.12) {
-      statusMsg.innerText = "⚠️ 大きな動きを検知。静止待機中...";
+      statusMsg.innerText = "⚠️ 大きな動きを検知。揺れ収まり待機中...";
       baseImageData = currentData;
       return;
     }
 
-    if (diffCount >= 15 && diffCount <= totalPixels * 0.10) {
-      const normCenterX = (boardCenter.x / canvas.width) * procCanvas.width;
-      const normCenterY = (boardCenter.y / canvas.height) * procCanvas.height;
-
+    if (diffCount >= 20 && diffCount <= totalPixels * 0.10) {
       let minDistanceToCenter = Infinity;
       let tipPx = null;
 
+      const normCenterX = (boardCenterX / canvas.width) * procCanvas.width;
+      const normCenterY = (boardCenterY / canvas.height) * procCanvas.height;
+
       changedPixels.forEach(p => {
-        const dist = Math.hypot(p.x - normCenterX, p.y - normCenterY);
+        const dx = (p.x - normCenterX) / scaleX;
+        const dy = (p.y - normCenterY) / scaleY;
+        const dist = Math.hypot(dx, dy);
+
         if (dist < minDistanceToCenter) {
           minDistanceToCenter = dist;
           tipPx = p;
@@ -308,100 +574,201 @@
       if (tipPx) {
         const canvasX = (tipPx.x / procCanvas.width) * canvas.width;
         const canvasY = (tipPx.y / procCanvas.height) * canvas.height;
+
         const score = calculateScore(canvasX, canvasY);
         
-        throws[currentThrowIndex] = { label: score.text, pts: score.pts, x: canvasX, y: canvasY };
+        throws[currentThrowIndex] = { label: score.text, pts: score.pts, num: score.num, mult: score.mult, x: canvasX, y: canvasY };
         lastHitTime = Date.now();
         baseImageData = currentData;
 
         currentThrowIndex++;
         if (currentThrowIndex >= 3) {
           isDetecting = false;
-          statusMsg.innerText = "3投完了！「スコア確定」を押してください。";
+          statusMsg.innerText = "3投完了！確定を行ってください";
         } else {
-          statusMsg.innerText = `🎯 (${currentThrowIndex + 1}投目判定中...)`;
+          statusMsg.innerText = `🎯 (${currentThrowIndex + 1}投目検知)`;
         }
+
+        selectedSlotIndex = Math.min(currentThrowIndex, 2);
         updateUI();
+        sendData('SYNC_THROWS', { throws, currentThrowIndex });
       }
     }
   }
 
-  function calculateScore(x, y) {
-    const dx = x - boardCenter.x;
-    const dy = y - boardCenter.y;
-    const r = Math.hypot(dx, dy) / boardCenter.r;
+  function confirmRound(isRemote = false) {
+    if (!isRemote && role === 'camera') {
+      sendData('CONFIRM_ROUND', {});
+      return;
+    }
 
-    if (r <= 0.04) return { text: "D-BULL", pts: 50 };
-    if (r <= 0.09) return { text: "S-BULL", pts: 25 };
-    if (r > 1.0)   return { text: "OUT", pts: 0 };
+    let p = players[currentPlayerIdx];
+    const roundTotal = throws.reduce((s, t) => s + (t ? t.pts : 0), 0);
 
-    let angleRad = Math.atan2(dx, -dy);
-    let angleDeg = (angleRad * 180 / Math.PI + 360) % 360;
-    let index = Math.floor(((angleDeg + 9) % 360) / 18);
-    let num = BOARD_NUMBERS[index];
+    if (gameMode === 'countup') {
+      p.score += roundTotal;
+    } 
+    else if (gameMode === '501') {
+      if (p.score - roundTotal === 0) {
+        p.score = 0;
+        alert(`🎉 ${p.name} が 501 をあがりました！勝利！`);
+        location.reload();
+        return;
+      } else if (p.score - roundTotal < 0) {
+        alert(`⚠️ BUST! スコアは戻ります。`);
+      } else {
+        p.score -= roundTotal;
+      }
+    } 
+    else if (gameMode === 'cricket') {
+      throws.forEach(t => {
+        if (!t || !t.num) return;
+        let num = t.num, mult = t.mult;
+        if ([15,16,17,18,19,20,25].includes(num)) {
+          let currentMarks = p.cricketState[num];
+          let needed = 3 - currentMarks;
+          if (needed > 0) {
+            let addMarks = Math.min(needed, mult);
+            p.cricketState[num] += addMarks;
+            let overflow = mult - addMarks;
+            let isClosedAll = players.every(pl => pl.cricketState[num] >= 3);
+            if (overflow > 0 && !isClosedAll) p.score += (num * overflow);
+          } else {
+            let isClosedAll = players.every(pl => pl.cricketState[num] >= 3);
+            if (!isClosedAll) p.score += (num * mult);
+          }
+        }
+      });
+    }
 
-    if (r >= 0.58 && r <= 0.65) return { text: `T${num}`, pts: num * 3 };
-    if (r >= 0.92 && r <= 1.0) return { text: `D${num}`, pts: num * 2 };
-    return { text: `S${num}`, pts: num };
+    p.roundHistory.push(roundTotal);
+
+    currentPlayerIdx++;
+    if (currentPlayerIdx >= playerCount) {
+      currentPlayerIdx = 0;
+      currentRound++;
+    }
+
+    if (currentRound > maxRounds) {
+      alert("🏁 ゲーム終了！");
+      location.reload();
+      return;
+    }
+
+    updateScoreboardUI();
+    renderLiveStats();
+    isDetecting = false;
+    statusMsg.innerText = `次は ${players[currentPlayerIdx].name} の番です`;
+    document.getElementById('btn-confirm').disabled = true;
+  }
+
+  function renderLiveStats() {
+    const container = document.getElementById('live-stats-area');
+    if (!container) return;
+    
+    if (gameMode === 'cricket') {
+      const targets = [20, 19, 18, 17, 16, 15, 25];
+      const markIcons = ["-", "╱", "╳", "Ⓧ"];
+
+      let html = `<table class="stats-table"><tr><th>TARGET</th>`;
+      players.forEach(p => { html += `<th>${p.name}</th>`; });
+      html += `</tr>`;
+
+      targets.forEach(t => {
+        let label = t === 25 ? 'BULL' : t;
+        html += `<tr><td><b>${label}</b></td>`;
+        players.forEach(p => {
+          let m = p.cricketState[t] || 0;
+          let icon = markIcons[Math.min(m, 3)];
+          html += `<td>${icon}</td>`;
+        });
+        html += `</tr>`;
+      });
+      html += `</table>`;
+      container.innerHTML = html;
+    } else {
+      let html = `<table class="stats-table"><tr><th>R</th>`;
+      players.forEach(p => { html += `<th>${p.name}</th>`; });
+      html += `</tr>`;
+
+      for (let r = 1; r <= maxRounds; r++) {
+        html += `<tr><td>R${r}</td>`;
+        players.forEach(p => {
+          let pts = p.roundHistory[r - 1] !== undefined ? p.roundHistory[r - 1] : '-';
+          html += `<td>${pts}</td>`;
+        });
+        html += `</tr>`;
+      }
+      html += `</table>`;
+      container.innerHTML = html;
+    }
+  }
+
+  function updateScoreboardUI() {
+    if (role === 'camera') return;
+    document.getElementById('turn-display').innerText = `${players[currentPlayerIdx].name} の番です`;
+    document.getElementById('round-display').innerText = `Round ${currentRound} / ${maxRounds}`;
+
+    const sb = document.getElementById('scoreboard');
+    sb.innerHTML = '';
+    players.forEach((p, idx) => {
+      let activeClass = idx === currentPlayerIdx ? 'active' : '';
+      let scoreText = gameMode === 'cricket' ? `${p.score}点` : `${p.score}pt`;
+      sb.innerHTML += `
+        <div class="p-card ${activeClass}">
+          <div class="p-name">${p.name}</div>
+          <div class="p-score">${scoreText}</div>
+        </div>
+      `;
+    });
   }
 
   function updateUI() {
     for (let i = 0; i < 3; i++) {
       const scoreText = document.getElementById(`score-${i+1}`);
       if (scoreText) scoreText.innerText = throws[i] ? throws[i].label : "-";
+      const box = document.getElementById(`box-${i+1}`);
+      if (box) box.classList.toggle('active', i === selectedSlotIndex);
     }
     const btnConfirm = document.getElementById('btn-confirm');
-    if (btnConfirm) btnConfirm.disabled = (currentThrowIndex === 0 && !throws.some(t => t !== null));
-    renderScoreboard();
+    if (btnConfirm) btnConfirm.disabled = (currentThrowIndex < 3 && !throws.some(t => t !== null));
   }
 
-  function renderScoreboard() {
-    const container = document.getElementById('scoreboard');
-    if (!container) return;
-    container.innerHTML = "";
-    gameState.players.forEach((p, idx) => {
-      const isActive = idx === gameState.currentPlayer;
-      container.innerHTML += `
-        <div class="p-card ${isActive ? 'active' : ''}">
-          <div style="font-size:0.8rem; color:#aaa;">${p.name}</div>
-          <div class="p-score">${p.score}</div>
-        </div>
-      `;
-    });
-    document.getElementById('turn-display').innerText = `${gameState.players[gameState.currentPlayer].name} の番です`;
-  }
+  function drawOverlayBoard() {
+    ctx.strokeStyle = "rgba(0, 255, 204, 0.85)";
+    ctx.lineWidth = 2.5;
 
-  function confirmRound() {
-    let roundTotal = 0;
-    throws.forEach(t => { if (t) roundTotal += t.pts; });
+    const rx = baseRadius * scaleX;
+    const ry = baseRadius * scaleY;
 
-    let player = gameState.players[gameState.currentPlayer];
-    if (player.score - roundTotal >= 0) player.score -= roundTotal;
-
-    gameState.currentPlayer = (gameState.currentPlayer + 1) % gameState.players.length;
-    throws = [null, null, null]; currentThrowIndex = 0;
-    updateUI(); captureBase();
-  }
-
-  function resetGame() {
-    gameState.players.forEach(p => p.score = 501);
-    gameState.currentPlayer = 0;
-    throws = [null, null, null]; currentThrowIndex = 0;
-    updateUI();
-    if (video.readyState === video.HAVE_ENOUGH_DATA) captureBase();
-  }
-
-  function drawBoardOverlay() {
-    const { x, y, r } = boardCenter;
-    ctx.strokeStyle = "rgba(0, 255, 204, 0.6)"; ctx.lineWidth = 2;
-    [0.04, 0.09, 0.58, 0.65, 0.92, 1.0].forEach(ratio => {
-      ctx.beginPath(); ctx.arc(x, y, r * ratio, 0, Math.PI * 2); ctx.stroke();
-    });
-    for (let i = 0; i < 20; i++) {
-      let angle = (i * 18 - 9) * Math.PI / 180;
+    [1.0, 0.92, 0.65, 0.58, 0.09, 0.04].forEach(rRatio => {
       ctx.beginPath();
-      ctx.moveTo(x + r * 0.09 * Math.sin(angle), y - r * 0.09 * Math.cos(angle));
-      ctx.lineTo(x + r * Math.sin(angle), y - r * Math.cos(angle));
+      ctx.ellipse(boardCenterX, boardCenterY, rx * rRatio, ry * rRatio, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    });
+
+    const innerBullRx = rx * 0.09;
+    const innerBullRy = ry * 0.09;
+
+    for (let i = 0; i < 20; i++) {
+      const textAngleRad = (i * 18 - 90) * Math.PI / 180;
+      const textDistX = rx * 1.12;
+      const textDistY = ry * 1.12;
+
+      ctx.fillStyle = "#00ffcc";
+      ctx.font = "bold 24px sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(
+        BOARD_NUMBERS[i], 
+        boardCenterX + textDistX * Math.cos(textAngleRad), 
+        boardCenterY + textDistY * Math.sin(textAngleRad)
+      );
+
+      const lineAngleRad = (i * 18 - 90 - 9) * Math.PI / 180;
+      ctx.beginPath();
+      ctx.moveTo(boardCenterX + innerBullRx * Math.cos(lineAngleRad), boardCenterY + innerBullRy * Math.sin(lineAngleRad));
+      ctx.lineTo(boardCenterX + rx * Math.cos(lineAngleRad), boardCenterY + ry * Math.sin(lineAngleRad));
       ctx.stroke();
     }
   }
@@ -409,26 +776,67 @@
   function drawHitPoints() {
     throws.forEach((t, idx) => {
       if (t && t.x && t.y) {
-        ctx.beginPath(); ctx.arc(t.x, t.y, 14, 0, Math.PI * 2);
-        ctx.fillStyle = "rgba(255, 0, 85, 0.9)"; ctx.fill();
+        ctx.beginPath();
+        ctx.arc(t.x, t.y, 14, 0, Math.PI * 2);
+        ctx.fillStyle = idx === selectedSlotIndex ? "rgba(255, 0, 85, 1.0)" : "rgba(255, 152, 0, 0.8)";
+        ctx.fill();
         ctx.strokeStyle = "#fff"; ctx.lineWidth = 3; ctx.stroke();
-        ctx.fillStyle = "#fff"; ctx.font = "bold 16px sans-serif";
+        
+        ctx.fillStyle = "#fff";
+        ctx.font = "bold 16px sans-serif";
         ctx.textAlign = "center"; ctx.textBaseline = "middle";
         ctx.fillText(idx + 1, t.x, t.y);
       }
     });
   }
 
-  function sendDataToDisplay() {
-    const dataURL = canvas.toDataURL('image/jpeg', 0.5);
-    conn.send({ type: 'SYNC_BOARD', imgData: dataURL, boardCenter, throws, gameState });
+  function calculateScore(x, y) {
+    const dx = (x - boardCenterX) / scaleX;
+    const dy = (y - boardCenterY) / scaleY;
+    const distance = Math.hypot(dx, dy);
+    const r = distance / baseRadius;
+
+    if (r <= 0.04) return { text: "D-BULL", pts: 50, num: 25, mult: 2 };
+    if (r <= 0.09) return { text: "S-BULL", pts: 25, num: 25, mult: 1 };
+    if (r > 1.0)  return { text: "OUT", pts: 0, num: 0, mult: 0 };
+
+    let angleRad = Math.atan2(dx, -dy);
+    let angleDeg = (angleRad * 180 / Math.PI + 360) % 360;
+    let adjustedAngle = (angleDeg + 9) % 360;
+    let index = Math.floor(adjustedAngle / 18);
+    let num = BOARD_NUMBERS[index];
+
+    if (r >= 0.58 && r <= 0.65) return { text: `T${num}`, pts: num * 3, num: num, mult: 3 };
+    if (r >= 0.92 && r <= 1.0) return { text: `D${num}`, pts: num * 2, num: num, mult: 2 };
+    return { text: `S${num}`, pts: num, num: num, mult: 1 };
   }
 
-  function drawCanvasFromData(dataURL) {
-    const img = new Image();
-    img.onload = () => ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    img.src = dataURL;
+  document.getElementById('box-1').onclick = () => { selectedSlotIndex = 0; updateUI(); };
+  document.getElementById('box-2').onclick = () => { selectedSlotIndex = 1; updateUI(); };
+  document.getElementById('box-3').onclick = () => { selectedSlotIndex = 2; updateUI(); };
+
+  function setMultiplier(type) {
+    currentMultiplier = type;
+    document.querySelectorAll('.multiplier').forEach(btn => btn.classList.remove('active'));
+    document.getElementById(`btn-${type}`).classList.add('active');
   }
+
+  function manualScore(num) {
+    let multText = currentMultiplier === 'T' ? 'T' : (currentMultiplier === 'D' ? 'D' : 'S');
+    let multVal = currentMultiplier === 'T' ? 3 : (currentMultiplier === 'D' ? 2 : 1);
+    throws[selectedSlotIndex] = { label: `${multText}${num}`, pts: num * multVal, num: num, mult: multVal, x: null, y: null };
+    updateUI();
+    sendData('SYNC_THROWS', { throws, currentThrowIndex });
+  }
+
+  function manualSpecial(label, pts, num) {
+    throws[selectedSlotIndex] = { label: label, pts: pts, num: num, mult: pts === 50 ? 2 : (pts === 25 ? 1 : 0), x: null, y: null };
+    updateUI();
+    sendData('SYNC_THROWS', { throws, currentThrowIndex });
+  }
+
+  drawOverlayBoard();
 </script>
+
 </body>
 </html>
