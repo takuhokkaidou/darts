@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>ダーツ自動判定 Ver 6.0</title>
+  <title>ダーツ自動判定 Ver 6.1</title>
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; text-align: center; background-color: #121212; color: #fff; margin: 0; padding: 10px; touch-action: manipulation; }
@@ -13,7 +13,7 @@
     .setup-group { margin-bottom: 10px; text-align: left; }
     .setup-group label { font-size: 0.85rem; color: #aaa; display: block; margin-bottom: 4px; }
     select, input[type="text"] { width: 100%; padding: 8px; background: #333; color: #fff; border: 1px solid #555; border-radius: 6px; font-size: 1rem; box-sizing: border-box; }
-    .peer-id-box { background: #000; border: 1px dashed #00ffcc; padding: 8px; font-family: monospace; font-size: 1.1rem; color: #00ffcc; margin: 5px 0; word-break: break-all; border-radius: 6px; }
+    .peer-id-box { background: #000; border: 1px dashed #00ffcc; padding: 8px; font-family: monospace; font-size: 1.1rem; color: #00ffcc; margin: 5px 0; word-break: break-all; border-radius: 6px; text-align: center; }
     
     #board-container { position: relative; display: inline-block; margin: 5px auto; }
     video { display: none; }
@@ -28,7 +28,6 @@
     .p-score { font-size: 1.2rem; font-weight: bold; color: #fff; }
     .throws-container { display: flex; justify-content: center; gap: 8px; margin: 8px 0; }
     .throw-box { background: #222; border: 1px solid #444; border-radius: 8px; padding: 6px 10px; min-width: 70px; }
-    .throw-box.active { border-color: #00ffcc; box-shadow: 0 0 8px #00ffcc; }
     
     .controls { display: flex; justify-content: center; gap: 6px; max-width: 420px; margin: 5px auto; flex-wrap: wrap; }
     button { padding: 10px 12px; font-size: 0.9rem; border: none; border-radius: 6px; background-color: #333; color: #fff; cursor: pointer; flex-grow: 1; margin: 2px; }
@@ -38,7 +37,7 @@
 </head>
 <body>
 
-  <h1>🎯 ダーツ自動判定 <span class="version-tag">Ver 6.0</span></h1>
+  <h1>🎯 ダーツ自動判定 <span class="version-tag">Ver 6.1</span></h1>
   <video id="video" autoplay playsinline></video>
 
   <!-- 設定パネル -->
@@ -54,31 +53,29 @@
 
     <div id="display-id-group" class="setup-group" style="display:none;">
       <label>この端末の接続用ID (カメラ側に登録)</label>
-      <div class="peer-id-box" id="my-peer-id">発行中...</div>
+      <div class="peer-id-box" id="my-peer-id">接続中...</div>
+      <button onclick="initPeer()" style="font-size: 0.75rem; padding: 4px; margin-top: 4px;">🔄 IDを再発行</button>
     </div>
 
     <div id="remote-input-group" class="setup-group" style="display:none;">
-      <label>接続用 ID (ディスプレイに表示されたIDを入力)</label>
-      <input type="text" id="target-peer-id" placeholder="例: 1234">
+      <label>接続用 ID (ディスプレイ側のIDを入力)</label>
+      <input type="text" id="target-peer-id" placeholder="例: 1234-abcd">
     </div>
 
-    <button class="action-btn" style="width: 100%;" onclick="startApp()">🎮 スタート</button>
+    <button class="action-btn" style="width: 100%; margin-top: 10px;" onclick="startApp()">🎮 スタート</button>
   </div>
 
-  <!-- カメラ操作コントロール -->
   <div class="controls" id="cam-controls" style="display:none;">
     <button class="action-btn" onclick="startCamera()">📷 1. カメラ起動</button>
     <button class="action-btn" id="btn-base" onclick="captureBase()" disabled>🎯 2. 基準撮影(判定開始)</button>
   </div>
 
-  <!-- 描画キャンバス -->
   <div id="board-container" style="display:none;">
     <canvas id="dartboard" width="720" height="720"></canvas>
   </div>
 
   <div id="status-msg"></div>
 
-  <!-- ゲーム画面 UI -->
   <div id="game-ui" style="display:none;">
     <div class="game-info">
       <div class="player-turn" id="turn-display">P1 の番です</div>
@@ -86,11 +83,11 @@
     </div>
     <div class="scoreboard" id="scoreboard"></div>
     <div class="throws-container">
-      <div class="throw-box" id="box-1">1投目: <span id="score-1">-</span></div>
-      <div class="throw-box" id="box-2">2投目: <span id="score-2">-</span></div>
-      <div class="throw-box" id="box-3">3投目: <span id="score-3">-</span></div>
+      <div class="throw-box">1投目: <span id="score-1">-</span></div>
+      <div class="throw-box">2投目: <span id="score-2">-</span></div>
+      <div class="throw-box">3投目: <span id="score-3">-</span></div>
     </div>
-    <button class="confirm-btn" id="btn-confirm" onclick="confirmRound()" style="width: 100%; margin-top: 10px;" disabled>✅ スコア確定 (次のプレイヤーへ)</button>
+    <button class="confirm-btn" id="btn-confirm" onclick="confirmRound()" style="width: 100%; margin-top: 10px;" disabled>✅ スコア確定</button>
   </div>
 
 <script>
@@ -99,20 +96,15 @@
   const ctx = canvas.getContext('2d');
   const statusMsg = document.getElementById('status-msg');
 
-  // PeerJS 設定
   let peer = null;
   let conn = null;
   let role = 'single';
 
-  // ダーツボード数値配列
   const BOARD_NUMBERS = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5];
-  
-  // 計算用軽量キャンバス
   const procCanvas = document.createElement('canvas');
   procCanvas.width = 180; procCanvas.height = 180;
   const procCtx = procCanvas.getContext('2d');
 
-  // 検出設定
   let boardCenter = { x: 360, y: 360, r: 280 };
   let baseImageData = null;
   let isDetecting = false;
@@ -120,28 +112,43 @@
   let currentThrowIndex = 0;
   let lastHitTime = 0;
 
-  // ゲーム状態データ
   let gameState = {
     players: [ { name: "P1", score: 501 }, { name: "P2", score: 501 } ],
-    currentPlayer: 0,
-    roundScores: [0, 0, 0]
+    currentPlayer: 0
   };
 
   function toggleRoleUI() {
     role = document.getElementById('device-role').value;
-    document.getElementById('display-id-group').style.display = (role === 'display') ? 'block' : 'none';
-    document.getElementById('remote-input-group').style.display = (role === 'camera') ? 'block' : 'none';
+    const isDisplay = (role === 'display');
+    const isCamera = (role === 'camera');
+    
+    document.getElementById('display-id-group').style.display = isDisplay ? 'block' : 'none';
+    document.getElementById('remote-input-group').style.display = isCamera ? 'block' : 'none';
+
+    if (isDisplay && !peer) {
+      initPeer();
+    }
   }
 
   function initPeer() {
+    const idBox = document.getElementById('my-peer-id');
+    if (idBox) idBox.innerText = "接続サーバーに要求中...";
+
+    if (peer) peer.destroy();
+    
     peer = new Peer();
+
     peer.on('open', id => {
-      if (role === 'display') document.getElementById('my-peer-id').innerText = id;
+      if (idBox) idBox.innerText = id;
     });
 
     peer.on('connection', c => {
       conn = c;
       setupConnection();
+    });
+
+    peer.on('error', err => {
+      if (idBox) idBox.innerText = "エラー: 再発行を押してください";
     });
   }
 
@@ -163,7 +170,13 @@
     document.getElementById('setup-panel').style.display = 'none';
 
     if (role === 'camera') {
-      const targetId = document.getElementById('target-peer-id').value;
+      const targetId = document.getElementById('target-peer-id').value.trim();
+      if (!targetId) {
+        alert("ディスプレイに表示されているIDを入力してください。");
+        document.getElementById('setup-panel').style.display = 'block';
+        return;
+      }
+      if (!peer) peer = new Peer();
       conn = peer.connect(targetId);
       setupConnection();
       document.getElementById('cam-controls').style.display = 'flex';
@@ -171,7 +184,7 @@
     } else if (role === 'display') {
       document.getElementById('board-container').style.display = 'inline-block';
       document.getElementById('game-ui').style.display = 'block';
-    } else { // single
+    } else {
       document.getElementById('cam-controls').style.display = 'flex';
       document.getElementById('board-container').style.display = 'inline-block';
       document.getElementById('game-ui').style.display = 'block';
@@ -194,15 +207,10 @@
   }
 
   function captureBase() {
-    // 1. 自動ボード認識
     autoAlignBoard();
-
-    // 2. 基準画像保存
     procCtx.drawImage(video, 0, 0, procCanvas.width, procCanvas.height);
     baseImageData = procCtx.getImageData(0, 0, procCanvas.width, procCanvas.height);
-    
-    throws = [null, null, null];
-    currentThrowIndex = 0;
+    throws = [null, null, null]; currentThrowIndex = 0;
     isDetecting = true;
     updateUI();
     statusMsg.innerText = "🎯 判定中... (1投目を投げてください)";
@@ -212,11 +220,9 @@
     procCtx.drawImage(video, 0, 0, procCanvas.width, procCanvas.height);
     const imgData = procCtx.getImageData(0, 0, procCanvas.width, procCanvas.height);
     const data = imgData.data;
-
     let sumX = 0, sumY = 0, count = 0;
     for (let i = 0; i < data.length; i += 4) {
-      const r = data[i], g = data[i+1], b = data[i+2];
-      const brightness = (r + g + b) / 3;
+      const brightness = (data[i] + data[i+1] + data[i+2]) / 3;
       if (brightness > 60 && brightness < 220) {
         const pixelIdx = i / 4;
         sumX += pixelIdx % procCanvas.width;
@@ -224,12 +230,9 @@
         count++;
       }
     }
-
     if (count > 0) {
-      const avgX = (sumX / count) / procCanvas.width * canvas.width;
-      const avgY = (sumY / count) / procCanvas.height * canvas.height;
-      boardCenter.x = avgX;
-      boardCenter.y = avgY;
+      boardCenter.x = (sumX / count) / procCanvas.width * canvas.width;
+      boardCenter.y = (sumY / count) / procCanvas.height * canvas.height;
     }
   }
 
@@ -238,18 +241,13 @@
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       
       if (isDetecting && baseImageData && currentThrowIndex < 3) {
-        const now = Date.now();
-        if (now - lastHitTime > 3000) {
-          detectDartHit();
-        }
+        if (Date.now() - lastHitTime > 3000) detectDartHit();
       }
 
       drawBoardOverlay();
       drawHitPoints();
 
-      if (conn && conn.open) {
-        sendDataToDisplay();
-      }
+      if (conn && conn.open) sendDataToDisplay();
     }
     requestAnimationFrame(updateLoop);
   }
@@ -268,15 +266,11 @@
 
       if (diff > 130) {
         const pixelIdx = i / 4;
-        changedPixels.push({
-          x: pixelIdx % procCanvas.width,
-          y: Math.floor(pixelIdx / procCanvas.width)
-        });
+        changedPixels.push({ x: pixelIdx % procCanvas.width, y: Math.floor(pixelIdx / procCanvas.width) });
       }
     }
 
     const diffCount = changedPixels.length;
-
     if (diffCount > totalPixels * 0.12) {
       statusMsg.innerText = "⚠️ 大きな動きを検知。静止待機中...";
       baseImageData = currentData;
@@ -301,7 +295,6 @@
       if (tipPx) {
         const canvasX = (tipPx.x / procCanvas.width) * canvas.width;
         const canvasY = (tipPx.y / procCanvas.height) * canvas.height;
-
         const score = calculateScore(canvasX, canvasY);
         
         throws[currentThrowIndex] = { label: score.text, pts: score.pts, x: canvasX, y: canvasY };
@@ -315,7 +308,6 @@
         } else {
           statusMsg.innerText = `🎯 (${currentThrowIndex + 1}投目判定中...)`;
         }
-
         updateUI();
       }
     }
@@ -324,8 +316,7 @@
   function calculateScore(x, y) {
     const dx = x - boardCenter.x;
     const dy = y - boardCenter.y;
-    const dist = Math.hypot(dx, dy);
-    const r = dist / boardCenter.r;
+    const r = Math.hypot(dx, dy) / boardCenter.r;
 
     if (r <= 0.04) return { text: "D-BULL", pts: 50 };
     if (r <= 0.09) return { text: "S-BULL", pts: 25 };
@@ -333,8 +324,7 @@
 
     let angleRad = Math.atan2(dx, -dy);
     let angleDeg = (angleRad * 180 / Math.PI + 360) % 360;
-    let adjustedAngle = (angleDeg + 9) % 360;
-    let index = Math.floor(adjustedAngle / 18);
+    let index = Math.floor(((angleDeg + 9) % 360) / 18);
     let num = BOARD_NUMBERS[index];
 
     if (r >= 0.58 && r <= 0.65) return { text: `T${num}`, pts: num * 3 };
@@ -347,7 +337,6 @@
       const scoreText = document.getElementById(`score-${i+1}`);
       if (scoreText) scoreText.innerText = throws[i] ? throws[i].label : "-";
     }
-
     const btnConfirm = document.getElementById('btn-confirm');
     if (btnConfirm) btnConfirm.disabled = (currentThrowIndex === 0 && !throws.some(t => t !== null));
     renderScoreboard();
@@ -374,38 +363,27 @@
     throws.forEach(t => { if (t) roundTotal += t.pts; });
 
     let player = gameState.players[gameState.currentPlayer];
-    if (player.score - roundTotal >= 0) {
-      player.score -= roundTotal;
-    }
+    if (player.score - roundTotal >= 0) player.score -= roundTotal;
 
     gameState.currentPlayer = (gameState.currentPlayer + 1) % gameState.players.length;
-    
-    throws = [null, null, null];
-    currentThrowIndex = 0;
-    updateUI();
-    captureBase();
+    throws = [null, null, null]; currentThrowIndex = 0;
+    updateUI(); captureBase();
   }
 
   function resetGame() {
     gameState.players.forEach(p => p.score = 501);
     gameState.currentPlayer = 0;
-    throws = [null, null, null];
-    currentThrowIndex = 0;
+    throws = [null, null, null]; currentThrowIndex = 0;
     updateUI();
     if (video.readyState === video.HAVE_ENOUGH_DATA) captureBase();
   }
 
   function drawBoardOverlay() {
     const { x, y, r } = boardCenter;
-    ctx.strokeStyle = "rgba(0, 255, 204, 0.6)";
-    ctx.lineWidth = 2;
-
+    ctx.strokeStyle = "rgba(0, 255, 204, 0.6)"; ctx.lineWidth = 2;
     [0.04, 0.09, 0.58, 0.65, 0.92, 1.0].forEach(ratio => {
-      ctx.beginPath();
-      ctx.arc(x, y, r * ratio, 0, Math.PI * 2);
-      ctx.stroke();
+      ctx.beginPath(); ctx.arc(x, y, r * ratio, 0, Math.PI * 2); ctx.stroke();
     });
-
     for (let i = 0; i < 20; i++) {
       let angle = (i * 18 - 9) * Math.PI / 180;
       ctx.beginPath();
@@ -418,14 +396,10 @@
   function drawHitPoints() {
     throws.forEach((t, idx) => {
       if (t && t.x && t.y) {
-        ctx.beginPath();
-        ctx.arc(t.x, t.y, 14, 0, Math.PI * 2);
-        ctx.fillStyle = "rgba(255, 0, 85, 0.9)";
-        ctx.fill();
+        ctx.beginPath(); ctx.arc(t.x, t.y, 14, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(255, 0, 85, 0.9)"; ctx.fill();
         ctx.strokeStyle = "#fff"; ctx.lineWidth = 3; ctx.stroke();
-        
-        ctx.fillStyle = "#fff";
-        ctx.font = "bold 16px sans-serif";
+        ctx.fillStyle = "#fff"; ctx.font = "bold 16px sans-serif";
         ctx.textAlign = "center"; ctx.textBaseline = "middle";
         ctx.fillText(idx + 1, t.x, t.y);
       }
@@ -434,24 +408,14 @@
 
   function sendDataToDisplay() {
     const dataURL = canvas.toDataURL('image/jpeg', 0.5);
-    conn.send({
-      type: 'SYNC_BOARD',
-      imgData: dataURL,
-      boardCenter: boardCenter,
-      throws: throws,
-      gameState: gameState
-    });
+    conn.send({ type: 'SYNC_BOARD', imgData: dataURL, boardCenter, throws, gameState });
   }
 
   function drawCanvasFromData(dataURL) {
     const img = new Image();
-    img.onload = () => {
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    };
+    img.onload = () => ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
     img.src = dataURL;
   }
-
-  initPeer();
 </script>
 </body>
 </html>
