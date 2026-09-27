@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>Dartboard Perspective Corrector Ver.6.3</title>
+  <title>Dartboard Perspective Corrector Ver.6.2</title>
   <style>
     body {
       font-family: sans-serif;
@@ -34,7 +34,7 @@
       color: #00ffcc;
     }
   </style>
-  <!-- OpenCV.js (WebAssembly) の読み込み -->
+  <!-- 同一階層の opencv.js を読み込み -->
   <script async src="./opencv.js" onload="onOpenCvReady()"></script>
 </head>
 <body>
@@ -59,9 +59,6 @@
   <canvas id="hiddenCanvas" width="480" height="360" style="display:none;"></canvas>
 
   <script>
-    /**
-     * DartboardCorrector v6.2 クラス
-     */
     class DartboardCorrectorV6_2 {
       constructor(outputSize = 500) {
         this.outputSize = outputSize;
@@ -98,17 +95,17 @@
           cv.cvtColor(srcMat, hsv, cv.COLOR_RGBA2RGB);
           cv.cvtColor(hsv, hsv, cv.COLOR_RGB2HSV);
 
-          // 2. 青色領域抽出
-          const lowBlue = new cv.Mat(hsv.rows(), hsv.cols(), hsv.type(), [90, 100, 50, 0]);
-          const highBlue = new cv.Mat(hsv.rows(), hsv.cols(), hsv.type(), [135, 255, 255, 255]);
+          // 2. 青色領域抽出 (rows, cols のカッコを修正)
+          const lowBlue = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [90, 100, 50, 0]);
+          const highBlue = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [135, 255, 255, 255]);
           cv.inRange(hsv, lowBlue, highBlue, maskBlue);
           lowBlue.delete(); highBlue.delete();
 
-          // 3. 赤色領域抽出
-          const lowRed1 = new cv.Mat(hsv.rows(), hsv.cols(), hsv.type(), [0, 100, 50, 0]);
-          const highRed1 = new cv.Mat(hsv.rows(), hsv.cols(), hsv.type(), [10, 255, 255, 255]);
-          const lowRed2 = new cv.Mat(hsv.rows(), hsv.cols(), hsv.type(), [170, 100, 50, 0]);
-          const highRed2 = new cv.Mat(hsv.rows(), hsv.cols(), hsv.type(), [180, 255, 255, 255]);
+          // 3. 赤色領域抽出 (rows, cols のカッコを修正)
+          const lowRed1 = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [0, 100, 50, 0]);
+          const highRed1 = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [10, 255, 255, 255]);
+          const lowRed2 = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [170, 100, 50, 0]);
+          const highRed2 = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [180, 255, 255, 255]);
 
           cv.inRange(hsv, lowRed1, highRed1, maskRed1);
           cv.inRange(hsv, lowRed2, highRed2, maskRed2);
@@ -149,7 +146,7 @@
           const bestContour = contours.get(maxIndex);
 
           // 5. 楕円フィッティングと4点座標の取得
-          if (bestContour.rows() < 5) {
+          if (bestContour.rows < 5) {
             hierarchy.delete(); contours.delete();
             return { correctedMat: null, status: "輪郭点が不十分です" };
           }
@@ -191,7 +188,6 @@
         } catch (err) {
           return { correctedMat: null, status: "エラー: " + err.message };
         } finally {
-          // ガベージコレクションが効かないMatオブジェクトを明示的に解放
           hsv.delete(); maskRed1.delete(); maskRed2.delete();
           maskRed.delete(); maskBlue.delete(); combined.delete();
           kernel.delete();
@@ -199,7 +195,6 @@
       }
     }
 
-    // --- メイン制御スクリプト ---
     let corrector = null;
     let video = document.getElementById('webcam');
     let hiddenCanvas = document.getElementById('hiddenCanvas');
@@ -232,20 +227,17 @@
         let ctx = hiddenCanvas.getContext('2d');
         ctx.drawImage(video, 0, 0, hiddenCanvas.width, hiddenCanvas.height);
 
-        // Canvas から OpenCV Mat の生成
         let srcMat = cv.imread(hiddenCanvas);
-        
-        // Ver.6.2 処理の呼び出し
         let result = corrector.process(srcMat);
 
         statusText.innerText = result.status;
 
         if (result.correctedMat) {
           cv.imshow('canvasOutput', result.correctedMat);
-          result.correctedMat.delete(); // 表示後に解放
+          result.correctedMat.delete();
         }
 
-        srcMat.delete(); // メモリ解放
+        srcMat.delete();
       }
       requestAnimationFrame(processVideoFrame);
     }
