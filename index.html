@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>ダーツ自動判定 Ver 6.1</title>
+  <title>ダーツ自動判定 Ver 6.2</title>
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; text-align: center; background-color: #121212; color: #fff; margin: 0; padding: 10px; touch-action: manipulation; }
@@ -12,8 +12,8 @@
     .setup-panel { background: #1e1e1e; border: 1px solid #333; border-radius: 12px; padding: 12px; max-width: 420px; margin: 10px auto; }
     .setup-group { margin-bottom: 10px; text-align: left; }
     .setup-group label { font-size: 0.85rem; color: #aaa; display: block; margin-bottom: 4px; }
-    select, input[type="text"] { width: 100%; padding: 8px; background: #333; color: #fff; border: 1px solid #555; border-radius: 6px; font-size: 1rem; box-sizing: border-box; }
-    .peer-id-box { background: #000; border: 1px dashed #00ffcc; padding: 8px; font-family: monospace; font-size: 1.1rem; color: #00ffcc; margin: 5px 0; word-break: break-all; border-radius: 6px; text-align: center; }
+    select, input[type="number"] { width: 100%; padding: 8px; background: #333; color: #fff; border: 1px solid #555; border-radius: 6px; font-size: 1.2rem; box-sizing: border-box; text-align: center; }
+    .peer-id-box { background: #000; border: 2px dashed #00ffcc; padding: 12px; font-family: monospace; font-size: 2rem; font-weight: bold; color: #00ffcc; margin: 5px 0; letter-spacing: 4px; border-radius: 6px; text-align: center; }
     
     #board-container { position: relative; display: inline-block; margin: 5px auto; }
     video { display: none; }
@@ -37,7 +37,7 @@
 </head>
 <body>
 
-  <h1>🎯 ダーツ自動判定 <span class="version-tag">Ver 6.1</span></h1>
+  <h1>🎯 ダーツ自動判定 <span class="version-tag">Ver 6.2</span></h1>
   <video id="video" autoplay playsinline></video>
 
   <!-- 設定パネル -->
@@ -52,14 +52,14 @@
     </div>
 
     <div id="display-id-group" class="setup-group" style="display:none;">
-      <label>この端末の接続用ID (カメラ側に登録)</label>
-      <div class="peer-id-box" id="my-peer-id">接続中...</div>
-      <button onclick="initPeer()" style="font-size: 0.75rem; padding: 4px; margin-top: 4px;">🔄 IDを再発行</button>
+      <label>接続コード (カメラ側に入力)</label>
+      <div class="peer-id-box" id="my-peer-id">----</div>
+      <button onclick="initPeer()" style="font-size: 0.8rem; padding: 6px; margin-top: 4px;">🔄 別の4桁コードを発行</button>
     </div>
 
     <div id="remote-input-group" class="setup-group" style="display:none;">
-      <label>接続用 ID (ディスプレイ側のIDを入力)</label>
-      <input type="text" id="target-peer-id" placeholder="例: 1234-abcd">
+      <label>接続コード (ディスプレイの4桁数字)</label>
+      <input type="number" id="target-peer-id" placeholder="例: 1234" pattern="\d*" maxlength="4">
     </div>
 
     <button class="action-btn" style="width: 100%; margin-top: 10px;" onclick="startApp()">🎮 スタート</button>
@@ -99,7 +99,9 @@
   let peer = null;
   let conn = null;
   let role = 'single';
+  let shortCode = "";
 
+  const ID_PREFIX = "darts-app-";
   const BOARD_NUMBERS = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5];
   const procCanvas = document.createElement('canvas');
   procCanvas.width = 180; procCanvas.height = 180;
@@ -132,14 +134,17 @@
 
   function initPeer() {
     const idBox = document.getElementById('my-peer-id');
-    if (idBox) idBox.innerText = "接続サーバーに要求中...";
+    if (idBox) idBox.innerText = "生成中...";
 
     if (peer) peer.destroy();
     
-    peer = new Peer();
+    shortCode = Math.floor(1000 + Math.random() * 9000).toString();
+    const fullId = ID_PREFIX + shortCode;
+
+    peer = new Peer(fullId);
 
     peer.on('open', id => {
-      if (idBox) idBox.innerText = id;
+      if (idBox) idBox.innerText = shortCode;
     });
 
     peer.on('connection', c => {
@@ -148,7 +153,11 @@
     });
 
     peer.on('error', err => {
-      if (idBox) idBox.innerText = "エラー: 再発行を押してください";
+      if (err.type === 'unavailable-id') {
+        initPeer();
+      } else {
+        if (idBox) idBox.innerText = "エラー";
+      }
     });
   }
 
@@ -170,15 +179,19 @@
     document.getElementById('setup-panel').style.display = 'none';
 
     if (role === 'camera') {
-      const targetId = document.getElementById('target-peer-id').value.trim();
-      if (!targetId) {
-        alert("ディスプレイに表示されているIDを入力してください。");
+      const inputCode = document.getElementById('target-peer-id').value.trim();
+      if (!inputCode || inputCode.length !== 4) {
+        alert("ディスプレイに表示されている4桁の数字を入力してください。");
         document.getElementById('setup-panel').style.display = 'block';
         return;
       }
+      
+      const targetFullId = ID_PREFIX + inputCode;
       if (!peer) peer = new Peer();
-      conn = peer.connect(targetId);
+      
+      conn = peer.connect(targetFullId);
       setupConnection();
+      
       document.getElementById('cam-controls').style.display = 'flex';
       document.getElementById('board-container').style.display = 'inline-block';
     } else if (role === 'display') {
