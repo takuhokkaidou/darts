@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>ダーツ自動判定＆オンライン同期 Ver 7.0 (OpenCV完全統合版)</title>
+  <title>ダーツ自動判定＆オンライン同期 Ver 7.1</title>
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
   <!-- 同一階層の opencv.js を読み込み -->
   <script async src="./opencv.js" onload="onOpenCvReady()"></script>
@@ -30,7 +30,7 @@
     }
     .setup-group { margin-bottom: 10px; text-align: left; }
     .setup-group label { font-size: 0.85rem; color: #aaa; display: block; margin-bottom: 4px; }
-    select, input[type="text"] {
+    select, input[type="text"], input[type="range"] {
       width: 100%;
       padding: 8px;
       background: #333;
@@ -40,6 +40,19 @@
       font-size: 1rem;
       box-sizing: border-box;
     }
+
+    .calib-panel {
+      background: #181818;
+      border: 1px solid #00ffcc;
+      border-radius: 8px;
+      padding: 10px;
+      max-width: 420px;
+      margin: 10px auto;
+      text-align: left;
+    }
+    .calib-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+    .calib-row label { font-size: 0.75rem; color: #00ffcc; width: 38%; }
+    .calib-row input { width: 58%; }
 
     #board-container { position: relative; display: inline-block; margin: 5px auto; }
     video { display: none; }
@@ -155,7 +168,7 @@
 </head>
 <body>
 
-  <h1>🎯 ダーツ自動判定 <span class="version-tag">Ver 7.0 (Auto Perspective)</span></h1>
+  <h1>🎯 ダーツ自動判定 <span class="version-tag">Ver 7.1</span></h1>
 
   <video id="video" autoplay playsinline></video>
 
@@ -205,6 +218,34 @@
     <canvas id="dartboard" width="500" height="500"></canvas>
   </div>
 
+  <div class="calib-panel" id="calib-panel" style="display:none;">
+    <div style="font-weight: bold; color: #00ffcc; font-size: 0.85rem; margin-bottom: 8px;">⚙️ ズーム ＆ 緑枠調整</div>
+    <div class="calib-row">
+      <label>🔍 カメラズーム:</label>
+      <input type="range" id="calib-zoom" min="100" max="300" value="100" oninput="updateCalibParams()">
+    </div>
+    <div class="calib-row">
+      <label>横位置 (X):</label>
+      <input type="range" id="calib-x" min="100" max="400" value="250" oninput="updateCalibParams()">
+    </div>
+    <div class="calib-row">
+      <label>縦位置 (Y):</label>
+      <input type="range" id="calib-y" min="100" max="400" value="250" oninput="updateCalibParams()">
+    </div>
+    <div class="calib-row">
+      <label>全体サイズ:</label>
+      <input type="range" id="calib-r" min="100" max="300" value="210" oninput="updateCalibParams()">
+    </div>
+    <div class="calib-row">
+      <label>縦のつぶれ:</label>
+      <input type="range" id="calib-scale-y" min="50" max="150" value="100" oninput="updateCalibParams()">
+    </div>
+    <div class="calib-row">
+      <label>横のつぶれ:</label>
+      <input type="range" id="calib-scale-x" min="50" max="150" value="100" oninput="updateCalibParams()">
+    </div>
+  </div>
+
   <div id="status-msg">OpenCV.js ロード待機中...</div>
 
   <div id="game-ui" style="display:none;">
@@ -248,17 +289,16 @@
     <div id="live-stats-area"></div>
   </div>
 
-  <!-- 非表示作業用Canvas -->
-  <canvas id="rawCanvas" width="480" height="360" style="display:none;"></canvas>
+  <!-- 高画質対応の非表示作業用Canvas -->
+  <canvas id="rawCanvas" width="1280" height="720" style="display:none;"></canvas>
 
 <script>
-  // OpenCV 準備通知
   function onOpenCvReady() {
     const el = document.getElementById('status-msg');
-    if (el) el.innerText = "OpenCV.js 準備完了！条件を選択してスタートを押してください";
+    if (el) el.innerText = "OpenCV.js 準備完了！スタートを押してください";
   }
 
-  // DartboardCorrector (Ver. 6.2 補正コアクラス)
+  // DartboardCorrector (Ver. 6.2 補正コア)
   class DartboardCorrector {
     constructor(outputSize = 500) {
       this.outputSize = outputSize;
@@ -374,10 +414,13 @@
   const corrector = new DartboardCorrector(500);
   const BOARD_NUMBERS = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5];
 
-  // 補正後の500x500画像用の標準パラメータ
-  const boardCenterX = 250;
-  const boardCenterY = 250;
-  const baseRadius = 210; 
+  let videoTrack = null;
+  let zoomLevel = 1.0;
+  let boardCenterX = 250;
+  let boardCenterY = 250;
+  let baseRadius = 210; 
+  let scaleY = 1.0;
+  let scaleX = 1.0;
 
   let baseImageData = null;
   let currentMultiplier = 'S';
@@ -396,6 +439,25 @@
   let selectedSlotIndex = 0;
   let isDetecting = false;
   let lastHitTime = 0;
+
+  function updateCalibParams() {
+    zoomLevel = parseFloat(document.getElementById('calib-zoom').value) / 100.0;
+    boardCenterX = parseFloat(document.getElementById('calib-x').value);
+    boardCenterY = parseFloat(document.getElementById('calib-y').value);
+    baseRadius = parseFloat(document.getElementById('calib-r').value);
+    scaleY = parseFloat(document.getElementById('calib-scale-y').value) / 100.0;
+    scaleX = parseFloat(document.getElementById('calib-scale-x').value) / 100.0;
+
+    if (videoTrack) {
+      const capabilities = videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
+      if (capabilities.zoom) {
+        const minZ = capabilities.zoom.min || 1;
+        const maxZ = capabilities.zoom.max || 3;
+        const targetZoom = minZ + (zoomLevel - 1) * (maxZ - minZ) / 2;
+        videoTrack.applyConstraints({ advanced: [{ zoom: Math.min(targetZoom, maxZ) }] }).catch(() => {});
+      }
+    }
+  }
 
   function toggleRoleUI() {
     role = document.getElementById('device-role').value;
@@ -447,6 +509,7 @@
         document.getElementById('setup-panel').style.display = 'none';
         document.getElementById('cam-controls').style.display = 'flex';
         document.getElementById('board-container').style.display = 'inline-block';
+        document.getElementById('calib-panel').style.display = 'block';
         document.getElementById('game-ui').style.display = 'none';
         statusMsg.innerText = "接続成功！「1. カメラ起動」を押してください";
         setupDataListener();
@@ -498,6 +561,7 @@
     if (role === 'single') {
       document.getElementById('cam-controls').style.display = 'flex';
       document.getElementById('board-container').style.display = 'inline-block';
+      document.getElementById('calib-panel').style.display = 'block';
     }
     
     if (role !== 'camera') {
@@ -515,15 +579,16 @@
   }
 
   async function startCamera() {
-    statusMsg.innerText = "カメラ起動中...";
+    statusMsg.innerText = "高画質カメラ起動中...";
     try {
       let stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" }, width: { ideal: 640 }, height: { ideal: 480 } }
+        video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } }
       });
       video.srcObject = stream;
+      videoTrack = stream.getVideoTracks()[0];
       await video.play();
       document.getElementById('btn-base').disabled = false;
-      statusMsg.innerText = "ダーツボードを斜めに映し、「2. 基準撮影」を押してください";
+      statusMsg.innerText = "ズーム・位置を微調整し、「2. 基準撮影」を押してください";
       requestAnimationFrame(updateLoop);
     } catch (err) {
       alert("カメラエラー: " + err);
@@ -567,7 +632,6 @@
         cv.imshow('dartboard', correctedMat);
         correctedMat.delete();
       } else {
-        // 自動認識に失敗した場合は生映像を表示
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       }
       
@@ -613,8 +677,8 @@
       let tipPx = null;
 
       changedPixels.forEach(p => {
-        const dx = p.x - boardCenterX;
-        const dy = p.y - boardCenterY;
+        const dx = (p.x - boardCenterX) / scaleX;
+        const dy = (p.y - boardCenterY) / scaleY;
         const dist = Math.hypot(dx, dy);
 
         if (dist < minDistanceToCenter) {
@@ -786,15 +850,19 @@
     ctx.strokeStyle = "rgba(0, 255, 204, 0.85)";
     ctx.lineWidth = 2.5;
 
+    const rx = baseRadius * scaleX;
+    const ry = baseRadius * scaleY;
+
     [1.0, 0.92, 0.65, 0.58, 0.09, 0.04].forEach(rRatio => {
       ctx.beginPath();
-      ctx.arc(boardCenterX, boardCenterY, baseRadius * rRatio, 0, Math.PI * 2);
+      ctx.ellipse(boardCenterX, boardCenterY, rx * rRatio, ry * rRatio, 0, 0, Math.PI * 2);
       ctx.stroke();
     });
 
     for (let i = 0; i < 20; i++) {
       const textAngleRad = (i * 18 - 90) * Math.PI / 180;
-      const textDist = baseRadius * 1.12;
+      const textDistX = rx * 1.12;
+      const textDistY = ry * 1.12;
 
       ctx.fillStyle = "#00ffcc";
       ctx.font = "bold 20px sans-serif";
@@ -802,14 +870,14 @@
       ctx.textBaseline = "middle";
       ctx.fillText(
         BOARD_NUMBERS[i], 
-        boardCenterX + textDist * Math.cos(textAngleRad), 
-        boardCenterY + textDist * Math.sin(textAngleRad)
+        boardCenterX + textDistX * Math.cos(textAngleRad), 
+        boardCenterY + textDistY * Math.sin(textAngleRad)
       );
 
       const lineAngleRad = (i * 18 - 90 - 9) * Math.PI / 180;
       ctx.beginPath();
-      ctx.moveTo(boardCenterX + (baseRadius * 0.09) * Math.cos(lineAngleRad), boardCenterY + (baseRadius * 0.09) * Math.sin(lineAngleRad));
-      ctx.lineTo(boardCenterX + baseRadius * Math.cos(lineAngleRad), boardCenterY + baseRadius * Math.sin(lineAngleRad));
+      ctx.moveTo(boardCenterX + (rx * 0.09) * Math.cos(lineAngleRad), boardCenterY + (ry * 0.09) * Math.sin(lineAngleRad));
+      ctx.lineTo(boardCenterX + rx * Math.cos(lineAngleRad), boardCenterY + ry * Math.sin(lineAngleRad));
       ctx.stroke();
     }
   }
@@ -832,8 +900,8 @@
   }
 
   function calculateScore(x, y) {
-    const dx = x - boardCenterX;
-    const dy = y - boardCenterY;
+    const dx = (x - boardCenterX) / scaleX;
+    const dy = (y - boardCenterY) / scaleY;
     const distance = Math.hypot(dx, dy);
     const r = distance / baseRadius;
 
