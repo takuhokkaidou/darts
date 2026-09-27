@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Dartboard Perspective Corrector Ver.6.2</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      background-color: #1a1a1a;
+      color: #ffffff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+    }
+    .container {
+      display: flex;
+      gap: 20px;
+      margin-top: 20px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .box {
+      text-align: center;
+    }
+    video, canvas {
+      border: 2px solid #444;
+      border-radius: 8px;
+      background-color: #000;
+    }
+    #status {
+      margin-top: 15px;
+      font-weight: bold;
+      color: #00ffcc;
+    }
+  </style>
+  <!-- OpenCV.js (WebAssembly) の読み込み -->
+  <script async src="./opencv.js" onload="onOpenCvReady()"></script>
+</head>
+<body>
+
+  <h1>ダーツボード補正 Ver.6.2 (OpenCV.js)</h1>
+  <p>カメラを許可するか、斜めのダーツボードをカメラに映してください。</p>
+  
+  <div id="status">OpenCV.js をロード中...</div>
+
+  <div class="container">
+    <div class="box">
+      <h3>入力映像（カメラ）</h3>
+      <video id="webcam" width="480" height="360" autoplay playsinline></video>
+    </div>
+    <div class="box">
+      <h3>補正結果 (Ver.6.2 正面化)</h3>
+      <canvas id="canvasOutput" width="500" height="500"></canvas>
+    </div>
+  </div>
+
+  <!-- 非表示の作業用Canvas -->
+  <canvas id="hiddenCanvas" width="480" height="360" style="display:none;"></canvas>
+
+  <script>
+    /**
+     * DartboardCorrector v6.2 クラス
+     */
+    class DartboardCorrectorV6_2 {
+      constructor(outputSize = 500) {
+        this.outputSize = outputSize;
+      }
+
+      orderPoints(pts) {
+        const rect = new Array(4);
+        const sum = pts.map(p => p.x + p.y);
+        rect[0] = pts[sum.indexOf(Math.min(...sum))]; // 左上
+        rect[2] = pts[sum.indexOf(Math.max(...sum))]; // 右下
+
+        const diff = pts.map(p => p.y - p.x);
+        rect[1] = pts[diff.indexOf(Math.min(...diff))]; // 右上
+        rect[3] = pts[diff.indexOf(Math.max(...diff))]; // 左下
+
+        return rect;
+      }
+
+      process(srcMat) {
+        if (!cv || !srcMat) {
+          return { correctedMat: null, status: "OpenCV.js 未準備" };
+        }
+
+        const hsv = new cv.Mat();
+        const maskRed1 = new cv.Mat();
+        const maskRed2 = new cv.Mat();
+        const maskRed = new cv.Mat();
+        const maskBlue = new cv.Mat();
+        const combined = new cv.Mat();
+        const kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(5, 5));
+
+        try {
+          // 1. RGBA -> RGB -> HSV 色空間への変換
+          cv.cvtColor(srcMat, hsv, cv.COLOR_RGBA2RGB);
+          cv.cvtColor(hsv, hsv, cv.COLOR_RGB2HSV);
+
+          // 2. 青色領域抽出
+          const lowBlue = new cv.Mat(hsv.rows(), hsv.cols(), hsv.type(), [90, 100, 50, 0]);
+          const highBlue = new cv.Mat(hsv.rows(), hsv.cols(), hsv.type(), [135, 255, 255, 255]);
+          cv.inRange(hsv, lowBlue, highBlue, maskBlue);
+          lowBlue.delete(); highBlue.delete();
+
+          // 3. 赤色領域抽出
+          const lowRed1 = new cv.Mat(hsv.rows(), hsv.cols(), hsv.type(), [0, 100, 50, 0]);
+          const highRed1 = new cv.Mat(hsv.rows(), hsv.cols(), hsv.type(), [10, 255, 255, 255]);
+          const lowRed2 = new cv.Mat(hsv.rows(), hsv.cols(), hsv.type(), [170, 100, 50, 0]);
+          const highRed2 = new cv.Mat(hsv.rows(), hsv.cols(), hsv.type(), [180, 255, 255, 255]);
+
+          cv.inRange(hsv, lowRed1, highRed1, maskRed1);
+          cv.inRange(hsv, lowRed2, highRed2, maskRed2);
+          cv.bitwise_or(maskRed1, maskRed2, maskRed);
+
+          lowRed1.delete(); highRed1.delete(); lowRed2.delete(); highRed2.delete();
+
+          // 4. 赤と青のマスクを結合しモルフォロジー処理で連結
+          cv.bitwise_or(maskRed, maskBlue, combined);
+          cv.morphologyEx(combined, combined, cv.MORPH_CLOSE, kernel);
+
+          // 輪郭抽出
+          const contours = new cv.MatVector();
+          const hierarchy = new cv.Mat();
+          cv.findContours(combined, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+          if (contours.size() === 0) {
+            hierarchy.delete(); contours.delete();
+            return { correctedMat: null, status: "赤/青セグメントが検出できません" };
+          }
+
+          // 最大面積を持つ輪郭を特定
+          let maxArea = 0;
+          let maxIndex = -1;
+          for (let i = 0; i < contours.size(); ++i) {
+            const area = cv.contourArea(contours.get(i));
+            if (area > maxArea) {
+              maxArea = area;
+              maxIndex = i;
+            }
+          }
+
+          if (maxIndex === -1 || maxArea < 1000) {
+            hierarchy.delete(); contours.delete();
+            return { correctedMat: null, status: "ターゲット領域が小さすぎます" };
+          }
+
+          const bestContour = contours.get(maxIndex);
+
+          // 5. 楕円フィッティングと4点座標の取得
+          if (bestContour.rows() < 5) {
+            hierarchy.delete(); contours.delete();
+            return { correctedMat: null, status: "輪郭点が不十分です" };
+          }
+
+          const rotatedRect = cv.fitEllipse(bestContour);
+          const vertices = cv.RotatedRect.points(rotatedRect);
+
+          const rawPts = vertices.map(v => ({ x: v.x, y: v.y }));
+          const ordered = this.orderPoints(rawPts);
+
+          const srcTri = cv.matFromArray(4, 1, cv.CV_32FC2, [
+            ordered[0].x, ordered[0].y,
+            ordered[1].x, ordered[1].y,
+            ordered[2].x, ordered[2].y,
+            ordered[3].x, ordered[3].y
+          ]);
+
+          const s = this.outputSize;
+          const dstTri = cv.matFromArray(4, 1, cv.CV_32FC2, [
+            0, 0,
+            s - 1, 0,
+            s - 1, s - 1,
+            0, s - 1
+          ]);
+
+          // 6. 射影変換（ホモグラフィ）の計算と変換適用
+          const M = cv.getPerspectiveTransform(srcTri, dstTri);
+          const correctedMat = new cv.Mat();
+          const dsize = new cv.Size(s, s);
+
+          cv.warpPerspective(srcMat, correctedMat, M, dsize, cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar());
+
+          // メモリ解放
+          srcTri.delete(); dstTri.delete(); M.delete();
+          hierarchy.delete(); contours.delete();
+
+          return { correctedMat, status: "Success (補正中)" };
+
+        } catch (err) {
+          return { correctedMat: null, status: "エラー: " + err.message };
+        } finally {
+          // ガベージコレクションが効かないMatオブジェクトを明示的に解放
+          hsv.delete(); maskRed1.delete(); maskRed2.delete();
+          maskRed.delete(); maskBlue.delete(); combined.delete();
+          kernel.delete();
+        }
+      }
+    }
+
+    // --- メイン制御スクリプト ---
+    let corrector = null;
+    let video = document.getElementById('webcam');
+    let hiddenCanvas = document.getElementById('hiddenCanvas');
+    let outputCanvas = document.getElementById('canvasOutput');
+    let statusText = document.getElementById('status');
+
+    function onOpenCvReady() {
+      statusText.innerText = "OpenCV.js の準備完了。カメラを起動中...";
+      corrector = new DartboardCorrectorV6_2(500);
+      startCamera();
+    }
+
+    async function startCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          video: { width: 480, height: 360, facingMode: "environment" } 
+        });
+        video.srcObject = stream;
+        video.onloadedmetadata = () => {
+          statusText.innerText = "処理実行中...";
+          requestAnimationFrame(processVideoFrame);
+        };
+      } catch (err) {
+        statusText.innerText = "カメラの起動に失敗しました: " + err.message;
+      }
+    }
+
+    function processVideoFrame() {
+      if (!video.paused && !video.ended) {
+        let ctx = hiddenCanvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, hiddenCanvas.width, hiddenCanvas.height);
+
+        // Canvas から OpenCV Mat の生成
+        let srcMat = cv.imread(hiddenCanvas);
+        
+        // Ver.6.2 処理の呼び出し
+        let result = corrector.process(srcMat);
+
+        statusText.innerText = result.status;
+
+        if (result.correctedMat) {
+          cv.imshow('canvasOutput', result.correctedMat);
+          result.correctedMat.delete(); // 表示後に解放
+        }
+
+        srcMat.delete(); // メモリ解放
+      }
+      requestAnimationFrame(processVideoFrame);
+    }
+  </script>
+</body>
+</html>
